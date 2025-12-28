@@ -98,10 +98,14 @@ class Scratchpad(QWidget):
     SIGNALS:
     - stroke_completed: Emitted when a stroke is finished (for effort detection)
     - idle_timeout: Emitted when no activity for configured duration
+    - barrel_button_pressed: Emitted when stylus barrel button is pressed (push-to-talk)
+    - barrel_button_released: Emitted when stylus barrel button is released
     """
     
     stroke_completed = pyqtSignal()  # Notify parent when drawing occurs
     idle_timeout = pyqtSignal()      # Notify parent when child pauses too long
+    barrel_button_pressed = pyqtSignal()   # Push-to-talk start
+    barrel_button_released = pyqtSignal()  # Push-to-talk end
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -109,6 +113,9 @@ class Scratchpad(QWidget):
         # Track all strokes for analysis
         self.strokes: List[Stroke] = []
         self.current_stroke: Optional[Stroke] = None
+        
+        # Track barrel button state for push-to-talk
+        self._barrel_button_down = False
         
         # Idle detection timer (triggers scaffolding)
         self.idle_timer = QTimer()
@@ -135,10 +142,29 @@ class Scratchpad(QWidget):
         - Precise positioning (subpixel accuracy)
         - Palm rejection handled by the OS
         - Tilt detection (future use for angled strokes)
+        
+        BARREL BUTTON (Push-to-Talk):
+        HP Omni pen barrel button may report as MiddleButton or RightButton
+        depending on driver config. We check both for compatibility.
         """
         pos = event.position()
         pressure = event.pressure()  # 0.0 to 1.0
         
+        # Check barrel button state for push-to-talk
+        # HP Omni pen may report as MiddleButton or RightButton
+        barrel_pressed = bool(
+            event.buttons() & (Qt.MouseButton.MiddleButton | Qt.MouseButton.RightButton)
+        )
+        
+        # Emit signals on barrel button state change
+        if barrel_pressed and not self._barrel_button_down:
+            self._barrel_button_down = True
+            self.barrel_button_pressed.emit()
+        elif not barrel_pressed and self._barrel_button_down:
+            self._barrel_button_down = False
+            self.barrel_button_released.emit()
+        
+        # Handle drawing events
         if event.type() == event.Type.TabletPress:
             self._begin_stroke(pos, pressure)
             event.accept()
@@ -320,3 +346,22 @@ class Scratchpad(QWidget):
         self.current_stroke = None
         self.idle_timer.stop()
         self.update()
+    
+    def capture_as_bytes(self) -> bytes:
+        """
+        Capture the scratchpad canvas as PNG bytes.
+        
+        Used for sending the drawing to Gemini for contextual analysis.
+        The AI can "see" the child's work and provide relevant hints.
+        
+        Returns:
+            Raw PNG bytes of the widget contents.
+        """
+        from PyQt6.QtCore import QBuffer, QIODevice
+        
+        pixmap = self.grab()
+        buffer = QBuffer()
+        buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+        pixmap.save(buffer, "PNG")
+        return bytes(buffer.data())
+

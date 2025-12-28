@@ -7,6 +7,10 @@ Research shows children learn better when they can see both the problem
 and their working space simultaneously. Having to remember the question
 while looking at a separate answer space creates cognitive load that
 interferes with mathematical thinking.
+
+HYBRID AI ARCHITECTURE:
+- Local Agent (PedagogicalAgent): Instant feedback, works offline
+- Cloud Agent (GeminiTutor): Contextual scaffolding when local detects confusion
 """
 
 from PyQt6.QtWidgets import (
@@ -16,12 +20,18 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QFont
 import random
+import os
 
 from ui.scratchpad import Scratchpad
 from core.agent import PedagogicalAgent
+from core.gemini_tutor import GeminiTutor
 import sys
 sys.path.append('..')
 from config import COLORS, FONT_SIZES, MIN_TOUCH_TARGET, TIMING
+
+# Confusion threshold: if child draws this many more strokes than expected,
+# escalate to cloud AI for contextual help
+CONFUSION_STROKE_THRESHOLD = 10
 
 
 class MainWindow(QMainWindow):
@@ -43,8 +53,13 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         
-        # Initialize pedagogical agent
+        # Initialize local pedagogical agent (always available, offline)
         self.agent = PedagogicalAgent()
+        
+        # Initialize cloud tutor (optional, graceful fallback if unavailable)
+        # API key from environment variable for security
+        api_key = os.environ.get('GEMINI_API_KEY', '')
+        self.gemini_tutor = GeminiTutor(api_key=api_key if api_key else None)
         
         # Problem state
         self.current_answer = 3  # Default for demo
@@ -224,6 +239,10 @@ class MainWindow(QMainWindow):
         
         # Offer scaffolding when child pauses too long
         self.scratchpad.idle_timeout.connect(self._on_idle)
+        
+        # Push-to-talk barrel button signals (for Gemini integration)
+        self.scratchpad.barrel_button_pressed.connect(self._on_barrel_pressed)
+        self.scratchpad.barrel_button_released.connect(self._on_barrel_released)
     
     def _welcome(self):
         """
@@ -338,6 +357,77 @@ class MainWindow(QMainWindow):
             else:
                 self.showFullScreen()
     
+    # =========================================================================
+    # GEMINI CLOUD INTEGRATION
+    # =========================================================================
+    
+    def _on_barrel_pressed(self):
+        """
+        Called when stylus barrel button is pressed.
+        Activates push-to-talk mode for Gemini voice interaction.
+        
+        FUTURE: Will start audio recording for voice-to-text.
+        Currently just activates session flag.
+        """
+        if self.gemini_tutor.is_available:
+            self.gemini_tutor.start_push_to_talk_session()
+            self.feedback_label.setText("🎤 Listening...")
+            self.feedback_label.setStyleSheet("color: #e74c3c; font-weight: bold; padding: 15px;")
+    
+    def _on_barrel_released(self):
+        """
+        Called when stylus barrel button is released.
+        Ends push-to-talk mode.
+        """
+        if self.gemini_tutor.session_active:
+            self.gemini_tutor.stop_push_to_talk_session()
+            self.feedback_label.setText("")
+            self.feedback_label.setStyleSheet("color: #7f8c8d; padding: 15px;")
+    
+    def _escalate_to_cloud(self):
+        """
+        Escalate to Gemini when local agent detects confusion.
+        
+        TRIGGER CONDITIONS:
+        - Child draws 10+ more strokes than expected
+        - Called from _on_check when confusion detected
+        
+        GRACEFUL FALLBACK:
+        If cloud is unavailable or returns None, we use local scaffolding.
+        """
+        if not self.gemini_tutor.is_available:
+            return False
+        
+        # Capture scratchpad as image for Gemini
+        canvas_bytes = self.scratchpad.capture_as_bytes()
+        drawn = self.scratchpad.stroke_count
+        target = self.current_answer
+        
+        # Ask Gemini for contextual help
+        hint = self.gemini_tutor.analyze_canvas_context(
+            canvas_bytes=canvas_bytes,
+            target_number=target,
+            current_strokes=drawn
+        )
+        
+        if hint:
+            self.feedback_label.setText(hint)
+            self.agent.speak(hint)
+            return True
+        
+        # Cloud failed - use local fallback
+        return False
+    
+    def _is_child_confused(self, drawn: int, target: int) -> bool:
+        """
+        Detect if the child appears confused based on stroke patterns.
+        
+        HEURISTIC:
+        If they've drawn significantly more strokes than needed,
+        they might be struggling to understand the concept.
+        """
+        return drawn > target + CONFUSION_STROKE_THRESHOLD
+    
     def set_problem(self, question: str, answer: int, hint: str = ""):
         """
         Set a new problem for the child.
@@ -354,3 +444,4 @@ class MainWindow(QMainWindow):
         
         self.scratchpad.clear()
         self.agent.reset_for_new_problem()
+
