@@ -61,6 +61,11 @@ class MainWindow(QMainWindow):
         api_key = os.environ.get('GEMINI_API_KEY', '')
         self.gemini_tutor = GeminiTutor(api_key=api_key if api_key else None)
         
+        # Initialize progress tracker for parent dashboard
+        from core.progress_tracker import ProgressTracker
+        self.progress = ProgressTracker()
+        self.progress.start_session()
+        
         # Problem state
         self.current_answer = 3  # Default for demo
         self.current_question = "Draw 3 items"
@@ -72,6 +77,10 @@ class MainWindow(QMainWindow):
         
         # Build UI
         self._setup_ui()
+        
+        # Create celebration overlay
+        from ui.celebration import CelebrationOverlay
+        self.celebration = CelebrationOverlay(self)
         
         # Connect signals
         self._connect_signals()
@@ -304,6 +313,9 @@ class MainWindow(QMainWindow):
         self.feedback_label.setText(feedback)
         self.agent.speak(feedback)
         
+        # Record attempt for progress tracking
+        self.progress.record_attempt(is_correct)
+        
         if is_correct:
             self._celebrate()
         elif self.agent.should_offer_scaffolding():
@@ -314,9 +326,11 @@ class MainWindow(QMainWindow):
         """
         Visual celebration for correct answers.
         
-        TODO: Add particle effects, sounds, animations
+        THE DOPAMINE HIT:
+        Star animation + sound = child wants to continue.
         """
         self.feedback_label.setStyleSheet("color: #27ae60; font-weight: bold; padding: 15px;")
+        self.celebration.celebrate()
     
     def _offer_scaffolding(self):
         """Offer help after multiple incorrect attempts."""
@@ -356,6 +370,16 @@ class MainWindow(QMainWindow):
                 self.showNormal()
             else:
                 self.showFullScreen()
+    
+    def closeEvent(self, event):
+        """
+        Save progress when app closes.
+        
+        PARENT VALUE:
+        Ensures learning data is persisted even on unexpected exit.
+        """
+        self.progress.end_session()
+        event.accept()
     
     # =========================================================================
     # GEMINI CLOUD INTEGRATION
