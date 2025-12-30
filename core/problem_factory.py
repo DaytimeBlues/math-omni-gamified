@@ -7,6 +7,16 @@ Generates counting problems with linear difficulty scaling.
 import random
 from config import CONCRETE_ITEMS
 
+# Pedagogically appropriate prompts that don't give away the answer
+HOST_PROMPTS = [
+    "How many can you count?",
+    "Let's count together!",
+    "Can you count these?",
+    "Count carefully!",
+    "How many do you see?",
+    "Take your time and count!",
+]
+
 
 class ProblemFactory:
     """Generates math problems scaled to level index."""
@@ -48,5 +58,5 @@ class ProblemFactory:
             "options": options_list,
             "prompt": f"How many {item['name']}?",
             "emoji": item['emoji'],
-            "host": f"Can you count to {target}?"
+            "host": random.choice(HOST_PROMPTS)  # No longer gives away answer!
         }
