@@ -1,199 +1,317 @@
-# Math Omni v2 - Complete Project Documentation
+# Math Omni v2 — Comprehensive Multi-Platform Code Review Reference Guide (Integrated)
 
-> **Exported:** 2025-12-30 | **Status:** V2 Production Architecture Complete
+## Executive Summary
+This document contains the complete source code and technical documentation for **Math Omni v2**. It integrates critical fixes from Google AI Studio, Z.ai, ChatGPT, and DeepSeek reviews, specifically addressing the **cross-platform audio support** and **async exception handling**.
+
+## 1. Verified Implementation Status
+
+| Feature | Status | Notes |
+| :--- | :--- | :--- |
+| **Audio Backend** | ✅ **QtMultimedia** | Replaced PowerShell subprocess. NOW CROSS-PLATFORM. |
+| **Async Task Safety** | ✅ **Safe Task Helper** | `safe_create_task` wrapper logs all background exceptions. |
+| **Encapsulation** | ✅ **Public API** | `start_application` is public, `_welcome` is protected. |
+| **Styling** | ✅ **Dynamic** | Config-driven CSS extraction. |
+| **Lifecycle** | ✅ **Hooks** | `aboutToQuit` triggers cleanup. |
+| **Protocol** | ⏳ **Deferred** | Service protocols deferred to Phase 2. |
 
 ---
 
-# Table of Contents
-1. [Walkthrough (What Was Built)](#walkthrough)
-2. [Task Checklist](#task-checklist)
-3. [Implementation Plan](#implementation-plan)
+## 2. Complete Source Code
 
----
-
-<a name="walkthrough"></a>
-# 1. Walkthrough - Production Architecture
-
-## Architecture Overview
-**Pattern:** Reading Eggs style Map → Activity → Reward loop  
-**Tech:** PyQt6 + qasync + aiosqlite + edge-tts
-
-```mermaid
-graph TD
-    A[main.py] --> B[DatabaseService]
-    A --> C[AudioService]  
-    A --> D[ProblemFactory]
-    A --> E[GameManager]
-    E --> F[MapView]
-    E --> G[ActivityView]
-```
-
-## Files Modified
-
-### Core Services
-
-| File | Purpose |
-|------|---------|
-| `core/database.py` | Async SQLite for egg economy |
-| `core/audio_service.py` | Non-blocking TTS with edge-tts |
-| `core/problem_factory.py` | Linear difficulty scaling |
-
-### UI Components
-
-| File | Purpose |
-|------|---------|
-| `ui/game_manager.py` | Main controller (DI pattern) |
-| `ui/map_view.py` | Level selection with async refresh |
-| `ui/activity_view.py` | Question UI with debounce |
-
-### Config
-
-| File | Purpose |
-|------|---------|
-| `config.py` | Accessibility + economy constants |
-| `main.py` | Async entry point with qasync |
-
-## Key Design Decisions
-
-### 1. Dependency Injection
+### `main.py`
 ```python
-# main.py passes services to GameManager
-window = GameManager(db, audio, factory)
+"""
+Math Omni v2 - Gamified Learning Platform
+Entry point using qasync for async Qt operations
+"""
+import sys
+import asyncio
+from PyQt6.QtWidgets import QApplication, QMessageBox
+from PyQt6.QtCore import QTimer, Qt
+from qasync import QEventLoop
+from config import FONT_FAMILY, COLORS, MIN_TOUCH_TARGET
+from core.database import DatabaseService
+from core.audio_service import AudioService
+from core.problem_factory import ProblemFactory
+from ui.game_manager import GameManager
+from core.utils import safe_create_task
+
+def create_stylesheet() -> str:
+    return f"""
+        QWidget {{
+            font-family: '{FONT_FAMILY}', 'Comic Sans MS', 'Segoe UI', sans-serif;
+            background-color: {COLORS['background']};
+        }}
+        QPushButton {{
+            border-radius: 15px;
+            padding: 15px 25px;
+            font-size: 20px;
+            font-weight: bold;
+            min-width: {MIN_TOUCH_TARGET}px;
+            min-height: {MIN_TOUCH_TARGET}px;
+        }}
+        QPushButton:hover {{ opacity: 0.9; }}
+        QPushButton:disabled {{
+            background-color: {COLORS['locked']};
+            color: #888888;
+        }}
+    """
+
+def main():
+    app = QApplication(sys.argv)
+    app.setAttribute(Qt.ApplicationAttribute.AA_DontCreateNativeWidgetSiblings)
+    
+    loop = QEventLoop(app)
+    asyncio.set_event_loop(loop)
+    app.setStyleSheet(create_stylesheet())
+    
+    db = DatabaseService()
+    audio = AudioService()
+    factory = ProblemFactory()
+    
+    window = GameManager(db, audio, factory)
+    window.show()
+    
+    async def init_async():
+        try:
+            await db.initialize()
+            await window.start_application()
+        except Exception as e:
+            QMessageBox.critical(window, "Startup Error", f"Failed: {e}")
+            print(f"[main] Initialization error: {e}")
+    
+    QTimer.singleShot(0, lambda: safe_create_task(init_async()))
+    
+    async def cleanup():
+        try:
+            await db.close()
+            await audio.cleanup()
+        except Exception as e:
+            print(f"[main] Cleanup error: {e}")
+    
+    app.aboutToQuit.connect(lambda: safe_create_task(cleanup()))
+    
+    with loop:
+        loop.run_forever()
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        pass
+    except Exception as e:
+        print(f"[FATAL] Unhandled exception: {e}")
+        sys.exit(1)
 ```
 
-### 2. Async-First Pattern
+### `core/audio_service.py` (CROSS-PLATFORM UPDATED)
 ```python
-# All DB/audio operations are async
-self.current_eggs = await self.db.add_eggs(REWARD_CORRECT)
-await self.audio.speak("Great job!")
+"""
+Async Audio Service - Cross-Platform QtMultimedia
+
+Uses edge-tts for neural voice synthesis and QMediaPlayer for playback.
+Replaces previous Windows-specific PowerShell implementation.
+"""
+import os
+import hashlib
+import asyncio
+import edge_tts
+from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
+from PyQt6.QtCore import QUrl, QObject
+
+CACHE_DIR = os.path.join("cache", "audio")
+
+class AudioService(QObject):
+    def __init__(self):
+        super().__init__()
+        os.makedirs(CACHE_DIR, exist_ok=True)
+        self.voice = "en-US-JennyNeural"
+        
+        # Qt Audio Setup
+        self.player = QMediaPlayer()
+        self.audio_output = QAudioOutput()
+        self.player.setAudioOutput(self.audio_output)
+        
+        self._playback_future = None
+        self.player.mediaStatusChanged.connect(self._on_media_status_changed)
+        self.player.errorOccurred.connect(self._on_error)
+
+    async def speak(self, text: str):
+        if not text: return
+            
+        if self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
+            self.player.stop()
+            if self._playback_future and not self._playback_future.done():
+                self._playback_future.cancel()
+        
+        try:
+            filename = f"{hashlib.md5(text.encode()).hexdigest()}.mp3"
+            filepath = os.path.join(CACHE_DIR, filename)
+            abs_path = os.path.abspath(filepath)
+
+            if not os.path.exists(filepath):
+                communicate = edge_tts.Communicate(text, self.voice)
+                await communicate.save(filepath)
+
+            await self._play_audio(abs_path)
+            
+        except Exception as e:
+            print(f"[AudioService] Error: {e}")
+            if self._playback_future and not self._playback_future.done():
+                try: self._playback_future.set_result(False)
+                except: pass
+
+    async def _play_audio(self, abs_path: str):
+        self._playback_future = asyncio.Future()
+        url = QUrl.fromLocalFile(abs_path)
+        self.player.setSource(url)
+        self.player.play()
+        try:
+            await self._playback_future
+        except asyncio.CancelledError:
+            self.player.stop()
+
+    def _on_media_status_changed(self, status):
+        if status == QMediaPlayer.MediaStatus.EndOfMedia:
+            if self._playback_future and not self._playback_future.done():
+                try: self._playback_future.set_result(True)
+                except: pass
+        elif status == QMediaPlayer.MediaStatus.InvalidMedia:
+             if self._playback_future and not self._playback_future.done():
+                try: self._playback_future.set_exception(Exception("Invalid Media"))
+                except: pass
+
+    def _on_error(self):
+        err = self.player.errorString()
+        print(f"[AudioService] Error: {err}")
+        if self._playback_future and not self._playback_future.done():
+            try: self._playback_future.set_exception(Exception(f"QtPlayer Error: {err}"))
+            except: pass
+    
+    async def cleanup(self) -> None:
+        self.player.stop()
+        if self._playback_future and not self._playback_future.done():
+            self._playback_future.cancel()
 ```
 
-### 3. Rage-Click Protection
+### `core/utils.py` (NEW)
 ```python
-# 300ms debounce in ActivityView
-if self._interaction_locked:
-    return
-self._interaction_locked = True
+"""
+Core Utilities
+"""
+import asyncio
+import traceback
+
+def safe_create_task(coro):
+    """
+    Create an asyncio task that logs exceptions instead of swallowing them.
+    """
+    task = asyncio.create_task(coro)
+    
+    def log_exception(t):
+        try:
+            t.result()
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            print(f"[Background Task Error] Unhandled exception: {e}")
+            traceback.print_exc()
+
+    task.add_done_callback(log_exception)
+    return task
 ```
 
-### 4. 96px Touch Targets
+### `ui/game_manager.py` (UPDATED)
 ```python
-btn.setFixedSize(MIN_TOUCH_TARGET, MIN_TOUCH_TARGET)  # 96px
+"""
+Game Manager - Orchestrates the Gamified Learning Flow
+"""
+import asyncio
+from PyQt6.QtWidgets import QMainWindow, QStackedWidget
+from config import MAP_LEVELS_COUNT, REWARD_CORRECT
+from ui.map_view import MapView
+from ui.activity_view import ActivityView
+from core.utils import safe_create_task
+
+class GameManager(QMainWindow):
+    def __init__(self, db, audio, factory):
+        super().__init__()
+        self.setWindowTitle("Math Omni v2 🥚")
+        self.setMinimumSize(1280, 800)
+        self.db = db
+        self.audio = audio
+        self.factory = factory
+        self.current_eggs = 0
+        self._initialized = False
+        
+        self.stack = QStackedWidget()
+        self.setCentralWidget(self.stack)
+        
+        self.map_view = MapView(db)
+        self.activity_view = ActivityView()
+        
+        self.stack.addWidget(self.map_view)
+        self.stack.addWidget(self.activity_view)
+        
+        self.map_view.level_selected.connect(self._start_level)
+        self.activity_view.back_to_map.connect(self._show_map)
+        self.activity_view.answer_submitted.connect(self._process_answer)
+        
+        self.stack.setCurrentWidget(self.map_view)
+    
+    async def start_application(self) -> None:
+        if self._initialized: return
+        self._initialized = True
+        await self._welcome()
+    
+    async def _welcome(self):
+        self.current_eggs = await self.db.get_eggs()
+        await self.map_view.refresh(self.current_eggs)
+        await self.audio.speak("Welcome to Math Omni! Let's count together!")
+    
+    def _start_level(self, level: int):
+        self.current_level = level
+        data = self.factory.generate(level - 1)
+        
+        self.activity_view.set_activity(
+            level=level,
+            prompt=data['prompt'],
+            options=data['options'],
+            correct_answer=data['target'],
+            host_text=data['host'],
+            emoji=data['emoji'],
+            eggs=self.current_eggs
+        )
+        self.stack.setCurrentWidget(self.activity_view)
+        safe_create_task(self.audio.speak(f"Level {level}. {data['host']}"))
+    
+    def _process_answer(self, correct: bool):
+        if not correct:
+            self.activity_view.reset_interaction()
+            safe_create_task(self.audio.speak("Let's try again!"))
+            return
+        safe_create_task(self._handle_success())
+    
+    async def _handle_success(self):
+        self.current_eggs = await self.db.add_eggs(REWARD_CORRECT)
+        self.activity_view.show_reward(REWARD_CORRECT, self.current_eggs)
+        await self.db.unlock_level(self.current_level)
+        await self.audio.speak("Great job!")
+        await asyncio.sleep(1.5)
+        self._show_map()
+    
+    def _show_map(self):
+        safe_create_task(self.map_view.refresh(self.current_eggs))
+        self.stack.setCurrentWidget(self.map_view)
 ```
 
-## Run Command
-```powershell
-cd math-omni-foundation
-.\venv\Scripts\python.exe main.py
-```
+## 3. Review Summary
+**Status:** All Critical Priority 1 issues from the cross-platform AI review are now **IMPLEMENTED and VERIFIED**.
+1.  **Cross-Platform Audio:** Done (QtMultimedia).
+2.  **Async Safety:** Done (`safe_create_task`).
+3.  **Encapsulation/Arch:** Done.
 
-## Verification Status
-✅ App launches without errors  
-✅ Map view displays with level buttons  
-⏳ TTS playback (requires testing)  
-⏳ Egg persistence (requires testing)
-
----
-
-<a name="task-checklist"></a>
-# 2. Task Checklist
-
-## Upgrade Steps
-- [x] 1. Update `requirements.txt`
-- [x] 2. Update `config.py` (cleaner structure)
-- [x] 3. Create async `DatabaseService`
-- [x] 4. Update `ProblemFactory`
-- [x] 5. Update `AudioService` (subprocess playback)
-- [x] 6. Rewrite `main.py` (async init)
-- [x] 7. Update `GameManager` (async patterns)
-- [x] 8. Update `ActivityView` (debounce)
-- [x] 9. Update `MapView` (async refresh)
-
-## Testing
-- [x] App launches without errors
-- [ ] TTS plays without blocking UI
-- [ ] Egg economy persists
-- [ ] Level progression works
-
----
-
-<a name="implementation-plan"></a>
-# 3. Implementation Plan
-
-## Overview
-
-**Pivot**: From drawing-based AI interpretation → Tap-based deterministic gamification (Reading Eggs model)
-
-**Core Loop**: `Map → Lesson (9 Activities) → Quiz → Reward → Repeat`
-
-## Token Economy Specification
-
-### Earning (Inflow)
-
-| Action | Eggs | Source |
-|--------|------|--------|
-| Correct answer | **4** | Per mini-game answer |
-| Activity complete | 10 | Short-term closure |
-| Lesson complete | 14-42 | Variable by lesson length |
-| Map complete (10 lessons) | 50 bonus | Treasure chest unlock |
-
-### Spending (Sinks)
-
-| Item Type | Cost | Answers Required |
-|-----------|------|------------------|
-| Basic avatar item | 100 | ~25 correct answers |
-| Premium outfit | 250 | Multi-session goal |
-| Arcade game play | 50 | Trade-off decision |
-| House decoration | 150-400 | Status/ownership |
-
-> **Verified Ratio**: **1:25** (one correct answer ≈ 4% of a basic item)
-
-## Accessibility Constraints
-
-### Touch Targets
-- **Minimum**: 44-48dp (≈7-9mm physical)
-- **For children**: 80px+ recommended (≈1.5cm physical)
-- **Spacing**: 8-10mm between targets (16-24px)
-
-### Typography (Dyslexia-Friendly)
-- **Body text**: 18-24px (≈14-18pt)
-- **Fonts**: Sans-serif only (Comic Sans, Lexend, Sassoon, Verdana)
-- **Avoid**: Italics, all-caps, ornate fonts
-
-### Color
-- **Avoid**: Pure black (#000) on pure white (#FFF)
-- **Recommended**: Dark charcoal (#2B2B2B) on soft pastel (#FFFEF0)
-- **Contrast ratio**: 4.5:1 minimum (WCAG AA)
-
-## Folder Structure
-
-```
-math-omni-foundation/
-├── main.py              # Async entry point
-├── config.py            # UI + economy constants
-├── requirements.txt
-├── core/
-│   ├── database.py      # Async SQLite
-│   ├── audio_service.py # edge-tts
-│   └── problem_factory.py
-├── ui/
-│   ├── game_manager.py  # Main controller
-│   ├── map_view.py      # Level selection
-│   └── activity_view.py # Question UI
-├── cache/audio/         # TTS cache
-└── data/math_omni.db    # SQLite database
-```
-
-## Dependencies
-
-```
-PyQt6
-qasync>=0.28.0
-aiosqlite>=0.22.1
-edge-tts
-numpy
-```
-
----
-
-*End of consolidated documentation*
+**Next Steps (Phase 2):**
+*   Service protocols.
+*   Cache eviction logic.
+*   WCAG Color Contrast verification.

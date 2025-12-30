@@ -1,110 +1,118 @@
 """
-Celebration Overlay - Star Animation for Correct Answers
-The "dopamine hit" that makes the app feel finished.
-
-PEDAGOGICAL PURPOSE:
-A visual reward activates the brain's reward system, making
-the child want to continue. This is the difference between
-"5 minutes of engagement" and "30 minutes of flow state."
+Celebration Overlay
 """
+import random
+from PyQt6.QtWidgets import QWidget, QLabel, QVBoxLayout, QGraphicsOpacityEffect
+from PyQt6.QtCore import Qt, QTimer, QPointF, QPropertyAnimation
+from PyQt6.QtGui import QPainter, QColor, QFont, QPen, QBrush
 
-from PyQt6.QtWidgets import QWidget, QLabel
-from PyQt6.QtCore import (
-    Qt, QPropertyAnimation, QEasingCurve, 
-    QTimer, QPoint, QSize, pyqtProperty
-)
-from PyQt6.QtGui import QFont
-from PyQt6.QtMultimedia import QSoundEffect
-from PyQt6.QtCore import QUrl
-import os
+from config import COLORS, FONT_FAMILY
 
+class Particle:
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+        # Random velocity (explosion)
+        self.vx = random.uniform(-10, 10)
+        self.vy = random.uniform(-15, -5) # Upward burst
+        self.gravity = 0.5
+        self.color = QColor(
+            random.choice([
+                COLORS['primary'], COLORS['accent'], 
+                COLORS['success'], COLORS['danger'],
+                "#FFD700", "#FF69B4", "#00FFFF" # Gold, HotPink, Cyan
+            ])
+        )
+        self.size = random.randint(8, 16)
+        self.life = 1.0 # 100% opacity
+        self.decay = random.uniform(0.01, 0.03)
+
+    def update(self):
+        self.x += self.vx
+        self.y += self.vy
+        self.vy += self.gravity # Gravity
+        self.life -= self.decay
 
 class CelebrationOverlay(QWidget):
     """
-    A transparent overlay that shows a star animation and plays a sound.
-    
-    DESIGN:
-    - Large emoji star that scales up and bounces
-    - Optional "ding" sound effect
-    - Auto-hides after animation completes
+    Full-screen overlay with confetti particles and congratulatory text.
     """
-    
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False) # Catch clicks to skip?
+        # Actually want to block clicks to underlying, BUT click to dismiss.
         
-        # Make overlay transparent and cover parent
-        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
+        self.particles = []
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self._update_physics)
         
-        # Star emoji label
-        self.star_label = QLabel("⭐", self)
-        self.star_label.setFont(QFont("Segoe UI Emoji", 80))
-        self.star_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.star_label.setStyleSheet("background: transparent;")
+        # Setup UI
+        self.layout = QVBoxLayout(self)
+        self.layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
-        # Animation for scaling effect
-        self._scale = 1.0
-        self.scale_anim = QPropertyAnimation(self, b"scale")
-        self.scale_anim.setDuration(600)
-        self.scale_anim.setStartValue(0.3)
-        self.scale_anim.setEndValue(1.0)
-        self.scale_anim.setEasingCurve(QEasingCurve.Type.OutElastic)
+        self.msg_label = QLabel("LEVEL COMPLETE!")
+        self.msg_label.setFont(QFont(FONT_FAMILY, 48, QFont.Weight.Bold))
+        self.msg_label.setStyleSheet("color: white; padding: 20px; background-color: rgba(0,0,0,100); border-radius: 20px;")
+        self.msg_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.layout.addWidget(self.msg_label)
         
-        # Setup sound effect
-        self.sound = QSoundEffect()
-        sound_path = os.path.join(os.path.dirname(__file__), '..', 'assets', 'ding.wav')
-        if os.path.exists(sound_path):
-            self.sound.setSource(QUrl.fromLocalFile(sound_path))
-            self.sound.setVolume(0.5)
-        
-        # Hide initially
         self.hide()
-    
-    def get_scale(self):
-        return self._scale
-    
-    def set_scale(self, value):
-        self._scale = value
-        # Update star size based on scale
-        base_size = 120
-        new_size = int(base_size * value)
-        self.star_label.setFont(QFont("Segoe UI Emoji", int(80 * value)))
-        self._center_star()
-    
-    scale = pyqtProperty(float, get_scale, set_scale)
-    
-    def _center_star(self):
-        """Center the star in the overlay."""
-        if self.parent():
-            parent_rect = self.parent().rect()
-            self.setGeometry(parent_rect)
-            star_size = self.star_label.sizeHint()
-            x = (parent_rect.width() - star_size.width()) // 2
-            y = (parent_rect.height() - star_size.height()) // 2
-            self.star_label.move(x, y)
-    
-    def celebrate(self):
-        """
-        Show the celebration animation.
-        
-        Called when child gets a correct answer.
-        """
-        self._center_star()
+
+    def start(self, text="LEVEL COMPLETE!"):
+        self.msg_label.setText(text)
+        self.resize(self.parent().size())
         self.show()
         self.raise_()
         
-        # Play sound (if available)
-        if self.sound.source().isValid():
-            self.sound.play()
+        # Spawn particles (center bottom)
+        cx = self.width() / 2
+        cy = self.height() # Bottom
+        self.particles = []
+        for _ in range(100):
+            self.particles.append(Particle(cx, cy))
+            
+        self.timer.start(16) # ~60 FPS
         
-        # Start scale animation
-        self.scale_anim.start()
+        # Auto-dismiss
+        QTimer.singleShot(2500, self.stop)
+
+    def stop(self):
+        self.timer.stop()
+        self.hide()
+
+    def mousePressEvent(self, event):
+        # Click to skip
+        self.stop()
+
+    def _update_physics(self):
+        alive_particles = []
+        for p in self.particles:
+            p.update()
+            if p.life > 0 and p.y < self.height() + 50:
+                alive_particles.append(p)
         
-        # Auto-hide after animation
-        QTimer.singleShot(1500, self.hide)
-    
-    def resizeEvent(self, event):
-        """Reposition star when overlay resizes."""
-        super().resizeEvent(event)
-        self._center_star()
+        self.particles = alive_particles
+        
+        if not self.particles:
+            self.stop()
+        
+        self.update() # Trigger paint
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        # Semi-transparent dark background
+        painter.fillRect(self.rect(), QColor(0, 0, 0, 100))
+        
+        # Draw particles
+        for p in self.particles:
+            painter.setBrush(QBrush(p.color))
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setOpacity(max(0, p.life))
+            
+            # Simple circle
+            painter.drawEllipse(QPointF(p.x, p.y), p.size, p.size)
+            
+            # Or Rect for confetti style?
+            # painter.drawRect(int(p.x), int(p.y), p.size, p.size)

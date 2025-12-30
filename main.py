@@ -26,6 +26,7 @@ from core.database import DatabaseService
 from core.audio_service import AudioService
 from core.problem_factory import ProblemFactory
 from ui.game_manager import GameManager
+from core.utils import safe_create_task
 
 
 def create_stylesheet() -> str:
@@ -101,7 +102,8 @@ def main():
     
     # FIX: ChatGPT - Replace ensure_future with create_task
     # Use singleShot(0) instead of magic 100ms delay
-    QTimer.singleShot(0, lambda: asyncio.create_task(init_async()))
+    # FIX: Z.ai - Use safe_create_task to log exceptions
+    QTimer.singleShot(0, lambda: safe_create_task(init_async()))
     
     # FIX: ChatGPT - Lifecycle cleanup on quit
     async def cleanup():
@@ -112,7 +114,7 @@ def main():
             print(f"[main] Cleanup error: {e}")
     
     def on_about_to_quit():
-        asyncio.create_task(cleanup())
+        safe_create_task(cleanup())
     
     app.aboutToQuit.connect(on_about_to_quit)
 

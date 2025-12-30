@@ -2,6 +2,7 @@
 Activity View - Counting Question UI
 
 Displays the problem, answer options, and handles input with debounce.
+Uses JuicyButtons for tactile feedback (SFX).
 """
 
 from PyQt6.QtWidgets import (
@@ -14,6 +15,7 @@ from config import (
     MIN_TOUCH_TARGET, BUTTON_GAP, DEBOUNCE_DELAY_MS,
     FONT_FAMILY, FONT_SIZE_BODY, FONT_SIZE_HEADING, COLORS
 )
+from ui.components import JuicyButton, JuicyLabel
 
 
 class ActivityView(QWidget):
@@ -24,14 +26,16 @@ class ActivityView(QWidget):
     - 96px minimum button size
     - 300ms debounce after click
     - Visual feedback on selection
+    - SFX feedback via JuicyButtons
     """
     
     # Signals
     answer_submitted = pyqtSignal(bool)  # True = correct
     back_to_map = pyqtSignal()
     
-    def __init__(self):
+    def __init__(self, audio_service=None):
         super().__init__()
+        self.audio = audio_service
         self._correct_answer = None
         self._interaction_locked = False
         self._debounce_timer = QTimer()
@@ -51,7 +55,8 @@ class ActivityView(QWidget):
         # Header
         header = QHBoxLayout()
         
-        back_btn = QPushButton("← Map")
+        # Back Button with Click Sound
+        back_btn = JuicyButton("← Map", self.audio, "click")
         back_btn.setFont(QFont(FONT_FAMILY, 16))
         back_btn.setFixedSize(100, 50)
         back_btn.setStyleSheet(f"""
@@ -72,8 +77,10 @@ class ActivityView(QWidget):
         
         header.addStretch()
         
-        self.egg_label = QLabel("🥚 0")
-        self.egg_label.setFont(QFont(FONT_FAMILY, FONT_SIZE_BODY))
+        # Juicy Egg Label (Animated)
+        self.egg_label = JuicyLabel("🥚 0")
+        self.egg_label.set_base_font_size(24) # Slightly larger than body
+        self.egg_label.setFont(QFont(FONT_FAMILY, 24))
         header.addWidget(self.egg_label)
         
         layout.addLayout(header)
@@ -99,10 +106,18 @@ class ActivityView(QWidget):
         
         self._option_buttons = []
         for i in range(3):
-            btn = QPushButton("?")
+            # Initially no sound assigned, we set it dynamically or use default 'click'
+            # For answer buttons, we might want to manually play correct/wrong LATER,
+            # so we let the button handle the 'click' sound unless we override logic.
+            # But here we want custom sounds for correct/wrong.
+            # So let's use 'click' for immediate feedback, then overlay correct/wrong.
+            # actually better: play NO sound here, and play result sound in handler?
+            # User requested immediate tactile. "Click" is good for touch registration.
+            btn = JuicyButton("?", self.audio, "click") 
             btn.setFixedSize(MIN_TOUCH_TARGET, MIN_TOUCH_TARGET)
             btn.setFont(QFont(FONT_FAMILY, 28, QFont.Weight.Bold))
             btn.setStyleSheet(self._option_style())
+            # Use specific connection to receive the object
             btn.clicked.connect(lambda checked, b=btn: self._on_option_clicked(b))
             self._option_buttons.append(btn)
             buttons_layout.addWidget(btn)
@@ -150,6 +165,10 @@ class ActivityView(QWidget):
                 QPushButton:hover {{
                     background-color: #42A5F5;
                 }}
+                QPushButton:pressed {{
+                    background-color: #1E88E5;
+                    padding-top: 4px; /* Simulates press depth */
+                }}
             """
     
     def set_activity(self, level: int, prompt: str, options: list,
@@ -172,6 +191,8 @@ class ActivityView(QWidget):
             btn.setProperty("value", value)
             btn.setStyleSheet(self._option_style())
             btn.setEnabled(True)
+            # Update audio service reference if it changed (unlikely but safe)
+            btn.audio = self.audio
         
         self.feedback_label.setText("Tap the correct number!")
         self.feedback_label.setStyleSheet("color: #555555;")
@@ -192,6 +213,7 @@ class ActivityView(QWidget):
         correct = (value == self._correct_answer)
         
         if correct:
+            if self.audio: self.audio.play_sfx("correct")
             button.setStyleSheet(self._option_style("correct"))
             self.feedback_label.setText("🎉 Correct!")
             self.feedback_label.setStyleSheet(f"color: {COLORS['success']}; font-weight: bold;")
@@ -199,6 +221,7 @@ class ActivityView(QWidget):
             for btn in self._option_buttons:
                 btn.setEnabled(False)
         else:
+            if self.audio: self.audio.play_sfx("wrong")
             button.setStyleSheet(self._option_style("incorrect"))
             self.feedback_label.setText("Oops! Try again.")
             self.feedback_label.setStyleSheet(f"color: {COLORS['danger']};")
@@ -218,5 +241,7 @@ class ActivityView(QWidget):
     
     def show_reward(self, earned: int, total: int):
         """Display reward earned."""
+        if self.audio: self.audio.play_sfx("win")
         self.egg_label.setText(f"🥚 {total}")
+        self.egg_label.pop() # Trigger Animation
         self.feedback_label.setText(f"🎉 +{earned} eggs!")

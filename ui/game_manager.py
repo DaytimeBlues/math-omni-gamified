@@ -7,6 +7,7 @@ Pattern: Reading Eggs style Map → Activity → Reward loop
 FIXES APPLIED (AI Review):
 - Added public start_application() method (Z.ai)
 - Proper encapsulation - _welcome remains private (Z.ai)
+- Safe task creation for background exceptions (Z.ai)
 """
 
 import asyncio
@@ -16,6 +17,8 @@ from PyQt6.QtCore import QTimer
 from config import MAP_LEVELS_COUNT, REWARD_CORRECT, REWARD_COMPLETION
 from ui.map_view import MapView
 from ui.activity_view import ActivityView
+from ui.celebration import CelebrationOverlay
+from core.utils import safe_create_task
 
 
 class GameManager(QMainWindow):
@@ -49,10 +52,13 @@ class GameManager(QMainWindow):
         
         # Create views
         self.map_view = MapView(db)
-        self.activity_view = ActivityView()
+        self.activity_view = ActivityView(audio) # Pass audio to activity
         
         self.stack.addWidget(self.map_view)
         self.stack.addWidget(self.activity_view)
+        
+        # Celebration Overlay (Child of Window, top Z-order)
+        self.celebration = CelebrationOverlay(self)
         
         # Connect signals
         self.map_view.level_selected.connect(self._start_level)
@@ -61,6 +67,11 @@ class GameManager(QMainWindow):
         
         # Start at map
         self.stack.setCurrentWidget(self.map_view)
+
+    def resizeEvent(self, event):
+        """Ensure overlay covers entire window on resize."""
+        self.celebration.resize(self.size())
+        super().resizeEvent(event)
     
     # ==========================================================================
     # PUBLIC API
@@ -108,7 +119,7 @@ class GameManager(QMainWindow):
         self.stack.setCurrentWidget(self.activity_view)
         
         # Speak prompt
-        asyncio.create_task(
+        safe_create_task(
             self.audio.speak(f"Level {level}. {data['host']}")
         )
     
@@ -116,11 +127,11 @@ class GameManager(QMainWindow):
         """Handle answer submission."""
         if not correct:
             self.activity_view.reset_interaction()
-            asyncio.create_task(self.audio.speak("Let's try again!"))
+            safe_create_task(self.audio.speak("Let's try again!"))
             return
         
         # Success - run async handler
-        asyncio.create_task(self._handle_success())
+        safe_create_task(self._handle_success())
     
     async def _handle_success(self):
         """Async success handler - update economy, progress, audio."""
@@ -131,14 +142,16 @@ class GameManager(QMainWindow):
         # 2. Progress
         await self.db.unlock_level(self.current_level)
         
-        # 3. Audio
-        await self.audio.speak("Great job! You earned 10 eggs!")
+        # 3. Audio & Celebration
+        await self.audio.speak("Great job!")
+        self.celebration.start(f"LEVEL {self.current_level} COMPLETE!")
         
-        # 4. Return to map after delay
-        await asyncio.sleep(1.5)
+        # 4. Wait for celebration (2.5s)
+        await asyncio.sleep(2.5)
         self._show_map()
     
     def _show_map(self):
         """Return to map view."""
-        asyncio.create_task(self.map_view.refresh(self.current_eggs))
+        self.celebration.stop() # Ensure closed if skipped
+        safe_create_task(self.map_view.refresh(self.current_eggs))
         self.stack.setCurrentWidget(self.map_view)
