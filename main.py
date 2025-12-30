@@ -28,34 +28,15 @@ from core.problem_factory import ProblemFactory
 from ui.game_manager import GameManager
 from core.utils import safe_create_task
 from core.container import ServiceContainer
+from ui.premium_ui import MASTER_STYLESHEET
 
 
 def create_stylesheet() -> str:
     """
     Generate stylesheet dynamically from config values.
-    FIX: Z.ai & ChatGPT - hardcoded stylesheet extracted to use config.
+    Now uses MASTER_STYLESHEET from premium_ui for Omni Kids design.
     """
-    return f"""
-        QWidget {{
-            font-family: '{FONT_FAMILY}', 'Comic Sans MS', 'Segoe UI', sans-serif;
-            background-color: {COLORS['background']};
-        }}
-        QPushButton {{
-            border-radius: 15px;
-            padding: 15px 25px;
-            font-size: 20px;
-            font-weight: bold;
-            min-width: {MIN_TOUCH_TARGET}px;
-            min-height: {MIN_TOUCH_TARGET}px;
-        }}
-        QPushButton:hover {{
-            opacity: 0.9;
-        }}
-        QPushButton:disabled {{
-            background-color: {COLORS['locked']};
-            color: #888888;
-        }}
-    """
+    return MASTER_STYLESHEET
 
 
 def main():
