@@ -26,9 +26,9 @@ from core.problem_factory import ProblemFactory
 from core.sfx import SFX
 from core.utils import safe_create_task
 from core.personalized_audio import PersonalizedAudio
-from ui.activity_view import ActivityView
+from ui.premium_activity_view import PremiumActivityView as ActivityView  # Premium UI
 from ui.celebration import CelebrationOverlay
-from ui.map_view import MapView
+from ui.premium_map_view import PremiumMapView as MapView  # Premium UI
 
 
 class GameManager(QMainWindow):
