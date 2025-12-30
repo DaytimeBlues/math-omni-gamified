@@ -52,6 +52,15 @@ def main():
     app = QApplication(sys.argv)
     app.setAttribute(Qt.ApplicationAttribute.AA_DontCreateNativeWidgetSiblings)
     
+    # FIX: LLM Review - Force Fusion style for predictable QSS
+    # Native Windows style fights stylesheets, Fusion is consistent
+    app.setStyle("Fusion")
+    
+    # FIX: LLM Review - Set app font explicitly (no Comic Sans fallback!)
+    # If Lexend isn't installed, falls back to Segoe UI (neutral)
+    from PyQt6.QtGui import QFont
+    app.setFont(QFont(FONT_FAMILY, 12))
+    
     # qasync bridges Qt's event loop with asyncio
     loop = QEventLoop(app)
     asyncio.set_event_loop(loop)

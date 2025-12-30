@@ -23,8 +23,9 @@ from config import COLORS, FONT_FAMILY
 
 MASTER_STYLESHEET = f"""
 /* General App Setting */
+/* LLM Fix: Removed "Comic Sans MS" fallback - use Segoe UI instead */
 QWidget {{
-    font-family: "{FONT_FAMILY}", "Comic Sans MS", sans-serif;
+    font-family: "{FONT_FAMILY}", "Segoe UI", sans-serif;
     color: {COLORS['text']};
 }}
 
