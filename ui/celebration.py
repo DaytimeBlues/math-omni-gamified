@@ -1,118 +1,124 @@
 """
-Celebration Overlay
+Celebration Overlay - Visual Reward System (Gemini Design)
+
+QPainter-based particle effects with tap-to-skip.
+Uses CelebrationFactory for variety (no immediate repeats).
 """
-import random
-from PyQt6.QtWidgets import QWidget, QLabel, QVBoxLayout, QGraphicsOpacityEffect
-from PyQt6.QtCore import Qt, QTimer, QPointF, QPropertyAnimation
-from PyQt6.QtGui import QPainter, QColor, QFont, QPen, QBrush
+from PyQt6.QtWidgets import QWidget, QLabel
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QPainter, QColor
 
-from config import COLORS, FONT_FAMILY
+from ui.effects.factory import CelebrationFactory, VisualEffect
 
-class Particle:
-    def __init__(self, x, y):
-        self.x = x
-        self.y = y
-        # Random velocity (explosion)
-        self.vx = random.uniform(-10, 10)
-        self.vy = random.uniform(-15, -5) # Upward burst
-        self.gravity = 0.5
-        self.color = QColor(
-            random.choice([
-                COLORS['primary'], COLORS['accent'], 
-                COLORS['success'], COLORS['danger'],
-                "#FFD700", "#FF69B4", "#00FFFF" # Gold, HotPink, Cyan
-            ])
-        )
-        self.size = random.randint(8, 16)
-        self.life = 1.0 # 100% opacity
-        self.decay = random.uniform(0.01, 0.03)
-
-    def update(self):
-        self.x += self.vx
-        self.y += self.vy
-        self.vy += self.gravity # Gravity
-        self.life -= self.decay
 
 class CelebrationOverlay(QWidget):
     """
-    Full-screen overlay with confetti particles and congratulatory text.
+    Fullscreen overlay for celebration effects.
+    
+    Features:
+    - 4 visual effects (confetti, stars, bubbles, hearts)
+    - No immediate repeats
+    - Tap-to-skip
+    - Callback on complete
     """
+    
+    finished = pyqtSignal()
+
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False) # Catch clicks to skip?
-        # Actually want to block clicks to underlying, BUT click to dismiss.
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
         
-        self.particles = []
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self._update_physics)
+        self.factory = CelebrationFactory()
+        self.active_effect: VisualEffect | None = None
+        self._callback = None
         
-        # Setup UI
-        self.layout = QVBoxLayout(self)
-        self.layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        # UI Elements
+        self.label = QLabel(self)
+        self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.label.setStyleSheet("""
+            QLabel {
+                font-size: 64px; 
+                font-weight: bold;
+                color: white;
+                background-color: rgba(0,0,0,100);
+                border-radius: 20px;
+                padding: 20px;
+            }
+        """)
         
-        self.msg_label = QLabel("LEVEL COMPLETE!")
-        self.msg_label.setFont(QFont(FONT_FAMILY, 48, QFont.Weight.Bold))
-        self.msg_label.setStyleSheet("color: white; padding: 20px; background-color: rgba(0,0,0,100); border-radius: 20px;")
-        self.msg_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.layout.addWidget(self.msg_label)
+        # Animation Loop (~60 FPS)
+        self._timer = QTimer()
+        self._timer.timeout.connect(self._game_loop)
+        self._frame_time = 16
         
         self.hide()
 
-    def start(self, text="LEVEL COMPLETE!"):
-        self.msg_label.setText(text)
-        self.resize(self.parent().size())
+    def start(self, text: str = "Good Job!", on_complete=None):
+        """
+        Starts the visual celebration.
+        
+        Args:
+            text: Message to display
+            on_complete: Optional callback when effect finishes
+        """
+        self._callback = on_complete
+        self.active_effect = self.factory.create_effect()
+        self.label.setText(text)
+        self.label.adjustSize()
+        
+        # Center label and resize to parent
+        if self.parent():
+            self.resize(self.parent().size())
+            center = self.rect().center()
+            self.label.move(
+                center.x() - self.label.width() // 2, 
+                center.y() - self.label.height() // 2
+            )
+        
         self.show()
         self.raise_()
-        
-        # Spawn particles (center bottom)
-        cx = self.width() / 2
-        cy = self.height() # Bottom
-        self.particles = []
-        for _ in range(100):
-            self.particles.append(Particle(cx, cy))
-            
-        self.timer.start(16) # ~60 FPS
-        
-        # Auto-dismiss
-        QTimer.singleShot(2500, self.stop)
+        self._timer.start(self._frame_time)
 
-    def stop(self):
-        self.timer.stop()
-        self.hide()
-
-    def mousePressEvent(self, event):
-        # Click to skip
-        self.stop()
-
-    def _update_physics(self):
-        alive_particles = []
-        for p in self.particles:
-            p.update()
-            if p.life > 0 and p.y < self.height() + 50:
-                alive_particles.append(p)
-        
-        self.particles = alive_particles
-        
-        if not self.particles:
+    def _game_loop(self):
+        """Animation update loop."""
+        if not self.active_effect:
             self.stop()
+            return
+
+        # Update physics
+        is_running = self.active_effect.update(self._frame_time, self.rect())
         
-        self.update() # Trigger paint
+        # Trigger repaint
+        self.update()
+
+        if not is_running:
+            self.stop()
 
     def paintEvent(self, event):
+        """Delegate drawing to active effect."""
+        if not self.active_effect:
+            return
+
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
-        # Semi-transparent dark background
-        painter.fillRect(self.rect(), QColor(0, 0, 0, 100))
+        self.active_effect.draw(painter, self.rect())
+
+    def mousePressEvent(self, event):
+        """Tap-to-skip: allow user to skip animation."""
+        self.stop()
+
+    def stop(self):
+        """Clean up and notify."""
+        self._timer.stop()
+        self.active_effect = None
+        self.hide()
         
-        # Draw particles
-        for p in self.particles:
-            painter.setBrush(QBrush(p.color))
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setOpacity(max(0, p.life))
+        if self._callback:
+            # Defer callback to ensure UI stack unwinds cleanly
+            QTimer.singleShot(0, self._callback)
+            self._callback = None
             
-            # Simple circle
-            painter.drawEllipse(QPointF(p.x, p.y), p.size, p.size)
-            
-            # Or Rect for confetti style?
-            # painter.drawRect(int(p.x), int(p.y), p.size, p.size)
+        self.finished.emit()

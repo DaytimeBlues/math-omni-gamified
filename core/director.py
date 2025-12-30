@@ -40,11 +40,12 @@ class Director(QObject):
     state_changed = pyqtSignal(AppState)
     
     # Valid state transitions (Z.ai fix #1)
+    # Updated: Added TUTOR_SPEAKING to IDLE transitions for welcome/announcements
     _VALID_TRANSITIONS: Dict[AppState, List[AppState]] = {
-        AppState.IDLE: [AppState.INPUT_ACTIVE],
+        AppState.IDLE: [AppState.INPUT_ACTIVE, AppState.TUTOR_SPEAKING],
         AppState.INPUT_ACTIVE: [AppState.EVALUATING, AppState.IDLE],
         AppState.EVALUATING: [AppState.INPUT_ACTIVE, AppState.CELEBRATION, AppState.TUTOR_SPEAKING],
-        AppState.TUTOR_SPEAKING: [AppState.INPUT_ACTIVE, AppState.IDLE],  # Skip back to input or exit
+        AppState.TUTOR_SPEAKING: [AppState.INPUT_ACTIVE, AppState.IDLE, AppState.CELEBRATION],
         AppState.CELEBRATION: [AppState.INPUT_ACTIVE, AppState.IDLE],
     }
     
