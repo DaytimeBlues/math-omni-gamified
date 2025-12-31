@@ -46,7 +46,6 @@ def main():
     Entry point using qasync.
     
     WHY QASYNC?
-    - edge-tts generates speech asynchronously
     - UI must never freeze while audio generates
     - Kids will rage-tap if app appears frozen
     """
