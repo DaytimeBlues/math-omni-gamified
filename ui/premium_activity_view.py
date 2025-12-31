@@ -358,20 +358,29 @@ class PremiumActivityView(QWidget):
                      item_name: str = None):
         """Configure the activity view for a new problem."""
         self._correct_answer = correct_answer
-        self._interaction_locked = False
+        self._interaction_locked = True  # Lock until audio finishes
         
         self.level_label.setText(f"Level {level}")
         self.question_label.setText(prompt)
         self.egg_label.setText(str(eggs))
         
-        # Build visual display
-        visual = " ".join([emoji for _ in range(correct_answer)])
+        # Build visual display with safety cap
+        display_count = min(correct_answer, 12)  # Cap at 12 for visual space
+        visual = " ".join([emoji for _ in range(display_count)])
         self.visual_label.setText(visual)
         
-        # Reset buttons
+        # Debug: verify visual matches answer
+        print(f"[Activity] Level {level}: {correct_answer} {emoji} (showing {display_count})")
+        if display_count != correct_answer:
+            print(f"[Activity] WARNING: Visual capped! Answer is {correct_answer}")
+        
+        # Reset and HIDE buttons until audio finishes
         for i, btn in enumerate(self._option_buttons):
             btn._base_text = str(options[i])
             btn.reset()
+            btn.setVisible(False)  # Hide during audio
+        
+        self.feedback_label.setText("Listen carefully...")
     
     def _on_option_clicked(self, button: PremiumAnswerButton):
         """Handle answer selection."""
@@ -428,9 +437,16 @@ class PremiumActivityView(QWidget):
             self._set_buttons_enabled(False)
     
     def _set_buttons_enabled(self, enabled: bool):
-        """Enable/disable answer buttons."""
+        """Enable/disable answer buttons and toggle visibility."""
         for btn in self._option_buttons:
             btn.setEnabled(enabled)
+            btn.setVisible(enabled)  # Hide when not interactive
+        
+        # Update feedback text
+        if enabled:
+            self._interaction_locked = False
+            self.feedback_label.setText("Tap the correct number!")
+            self.feedback_label.setStyleSheet(f"color: {COLORS['text_light']}; background: transparent;")
     
     def show_visual_hint(self, hint_name: str):
         """Display a visual hint."""
