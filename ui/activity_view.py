@@ -184,10 +184,12 @@ class ActivityView(QWidget):
             """
     
     def set_activity(self, level: int, prompt: str, options: list,
-                     correct_answer: int, host_text: str, emoji: str, eggs: int):
+                     correct_answer: int, host_text: str, emoji: str, eggs: int,
+                     item_name: str = ""):
         """Configure the activity for a new problem."""
         self._correct_answer = correct_answer
         self._interaction_locked = False
+        self._item_name = item_name
         
         self.level_label.setText(f"Level {level}")
         self.question_label.setText(prompt)

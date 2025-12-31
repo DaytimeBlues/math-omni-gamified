@@ -56,6 +56,7 @@ class GameManager(QMainWindow):
         self.current_eggs = 0
         self._initialized = False
         self._wrong_attempts = 0
+        self._current_item_name = None  # For VoiceBank item lookup
         
         # Hint Engine (Rule-Based, No AI)
         self.hint_engine = self.container.resolve(RuleBasedHintEngine)
@@ -119,8 +120,7 @@ class GameManager(QMainWindow):
         duration = self.voice_bank.play_random("welcome")
         if duration > 0:
             await asyncio.sleep(duration)
-        else:
-            await self.audio.speak("Welcome to Math Omni! Let's count together!")
+        # No fallback needed - VoiceBank has 10 welcome clips
         
         self.director.set_state(AppState.IDLE)
     
@@ -131,6 +131,7 @@ class GameManager(QMainWindow):
         
         # Generate problem (0-indexed)
         data = self.factory.generate(level - 1)
+        self._current_item_name = data['item_name']  # For VoiceBank lookup
         
         # Configure activity view
         self.activity_view.set_activity(
@@ -140,7 +141,8 @@ class GameManager(QMainWindow):
             correct_answer=data['target'],
             host_text=data['host'],
             emoji=data['emoji'],
-            eggs=self.current_eggs
+            eggs=self.current_eggs,
+            item_name=data['item_name']  # For VoiceBank
         )
         
         # Switch view
@@ -181,7 +183,7 @@ class GameManager(QMainWindow):
         self.current_eggs = await self.db.add_eggs(REWARD_CORRECT)
         self.activity_view.show_reward(REWARD_CORRECT, self.current_eggs)
         
-        # 2. Unlock the current level for progress
+        # 2. Unlock level progress
         await self.db.unlock_level(self.current_level)
         
         # 3. Audio - Use premium voice bank
@@ -191,9 +193,12 @@ class GameManager(QMainWindow):
         category = get_success_category()
         duration = self.voice_bank.play_random(category)
         if duration > 0:
-            await asyncio.sleep(duration)       # Wait for audio to finish before proceding
-        else:
-            await self.audio.speak("Great job!")
+            await asyncio.sleep(duration)
+        
+        # Celebration audio
+        duration = self.voice_bank.play_random("celebration_rewards")
+        if duration > 0:
+            await asyncio.sleep(duration)
         
         self.director.set_state(AppState.CELEBRATION)
         self.celebration.start(f"LEVEL {self.current_level} COMPLETE!")
@@ -210,31 +215,31 @@ class GameManager(QMainWindow):
         self.director.set_state(AppState.IDLE)
 
     async def _announce_level(self, level: int, host_text: str) -> None:
-        """Speak the level intro then enable input (Codex fix)."""
+        """Speak the level intro using VoiceBank only (no API needed)."""
         # 1. Level Start phrase
         duration = self.voice_bank.play_random("level_start")
         if duration > 0:
             await asyncio.sleep(duration)
         
-        # 2. Item Specific Question (dynamic TTS)
-        msg = f"Level {level}. {host_text}"
-        await self.audio.speak(msg)
+        # 2. Item-specific question from VoiceBank
+        item_category = f"items_{self._current_item_name}"
+        duration = self.voice_bank.play_random(item_category)
+        if duration > 0:
+            await asyncio.sleep(duration)
         
         self.director.set_state(AppState.INPUT_ACTIVE)
 
     async def _play_hint_and_resume(self, message: str) -> None:
-        """Speak a hint and return the UI to interactive state (Codex fix)."""
+        """Speak a hint using VoiceBank only (no API needed)."""
         self.director.set_state(AppState.TUTOR_SPEAKING)
         
-        # Use voice bank for hints if applicable
+        # Use voice bank for hints
         cat = get_hint_category(self._wrong_attempts)
         duration = self.voice_bank.play_random(cat)
         
         if duration > 0:
             await asyncio.sleep(duration)
-        else:
-            # Fallback to dynamic TTS if no voice bank clip
-            await self.audio.speak(message)
+        # No fallback needed - VoiceBank has all hint clips
             
         self._resume_after_hint()
 
@@ -248,3 +253,5 @@ class GameManager(QMainWindow):
         hint = self.hint_engine.get_hint("counting", self._wrong_attempts)
         if hint:
             safe_create_task(self._play_hint_and_resume(hint.message))
+        else:
+            self._resume_after_hint()

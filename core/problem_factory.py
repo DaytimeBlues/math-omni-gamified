@@ -58,5 +58,6 @@ class ProblemFactory:
             "options": options_list,
             "prompt": f"How many {item['name']}?",
             "emoji": item['emoji'],
+            "item_name": item['name'],  # For VoiceBank category lookup
             "host": random.choice(HOST_PROMPTS)  # No longer gives away answer!
         }

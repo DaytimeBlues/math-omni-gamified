@@ -354,10 +354,16 @@ class PremiumActivityView(QWidget):
     # ==========================================================================
     
     def set_activity(self, level: int, prompt: str, options: list, 
-                     correct_answer: int, host_text: str, emoji: str, eggs: int):
-        """Configure the activity view for a new problem."""
+                     correct_answer: int, host_text: str, emoji: str, eggs: int,
+                     item_name: str = ""):
+        """Configure the activity view for a new problem.
+        
+        Args:
+            item_name: Name of the item being counted (for future VoiceBank use).
+        """
         self._correct_answer = correct_answer
         self._interaction_locked = False
+        self._item_name = item_name  # Store for potential VoiceBank use
         
         self.level_label.setText(f"Level {level}")
         self.question_label.setText(prompt)
