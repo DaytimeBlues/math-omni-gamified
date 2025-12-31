@@ -160,7 +160,7 @@ class ActivityView(QWidget):
         elif state == "incorrect":
             return f"""
                 QPushButton {{
-                    background-color: {COLORS['danger']};
+                    background-color: {COLORS['error']};
                     color: white;
                     border-radius: 48px;
                     border: 4px solid #C62828;
@@ -236,7 +236,7 @@ class ActivityView(QWidget):
             if self.audio: self.audio.play_sfx(SFX.ERROR)
             button.setStyleSheet(self._option_style("incorrect"))
             self.feedback_label.setText("Oops! Try again.")
-            self.feedback_label.setStyleSheet(f"color: {COLORS['danger']};")
+            self.feedback_label.setStyleSheet(f"color: {COLORS['error']};")
         
         self.answer_submitted.emit(correct)
     

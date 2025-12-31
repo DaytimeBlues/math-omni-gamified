@@ -181,23 +181,22 @@ class GameManager(QMainWindow):
         self.current_eggs = await self.db.add_eggs(REWARD_CORRECT)
         self.activity_view.show_reward(REWARD_CORRECT, self.current_eggs)
         
-        # 2. Audio - Use premium voice bank
+        # 2. Unlock level progress
+        await self.db.unlock_level(self.current_level)
+        
+        # 3. Audio - Use premium voice bank
         self.director.set_state(AppState.CELEBRATION)
         
-        # 1. Success Feedback (from VoiceBank)
+        # Success Feedback (from VoiceBank)
         category = get_success_category()
         duration = self.voice_bank.play_random(category)
         if duration > 0:
-            await asyncio.sleep(duration)       # Wait for audio to finish before proceding
+            await asyncio.sleep(duration)
         
-        # 3. Economy (Stars/Level ups)
-        stars = await self.db.get_stars()
-        if stars > 0:
-            duration = self.voice_bank.play_random("celebration_rewards")
-            if duration > 0:
-                await asyncio.sleep(duration)
-        else:
-            await self.audio.speak("Great job!")
+        # Celebration audio
+        duration = self.voice_bank.play_random("celebration_rewards")
+        if duration > 0:
+            await asyncio.sleep(duration)
         
         self.director.set_state(AppState.CELEBRATION)
         self.celebration.start(f"LEVEL {self.current_level} COMPLETE!")
@@ -246,3 +245,11 @@ class GameManager(QMainWindow):
         """Unlock interaction and return to input-ready state (Codex fix)."""
         self.director.set_state(AppState.INPUT_ACTIVE)
         self.activity_view.reset_interaction()
+
+    def _process_hint_after_delay(self) -> None:
+        """Process hint after encouragement audio finishes."""
+        hint = self.hint_engine.get_hint("counting", self._wrong_attempts)
+        if hint:
+            safe_create_task(self._play_hint_and_resume(hint.message))
+        else:
+            self._resume_after_hint()
