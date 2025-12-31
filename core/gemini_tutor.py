@@ -18,18 +18,17 @@ Only the scratchpad canvas is sent to the cloud, never webcam/audio.
 from __future__ import annotations
 
 import io
+import importlib.util
 import time
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
-from PIL import Image
+if TYPE_CHECKING:  # pragma: no cover
+    # Optional dependency; only used when cloud tutoring is enabled.
+    from PIL import Image as PILImage  # type: ignore
 
-# Optional import - app works without google.generativeai
-try:
-    import google.generativeai as genai
-    GEMINI_AVAILABLE = True
-except ImportError:
-    GEMINI_AVAILABLE = False
-    genai = None
+def _has_module(module_name: str) -> bool:
+    """Fast availability check without importing (startup-friendly)."""
+    return importlib.util.find_spec(module_name) is not None
 
 
 class GeminiTutor:
@@ -71,9 +70,24 @@ class GeminiTutor:
         if not api_key:
             print("[GeminiTutor] No API key provided - cloud features disabled")
             return
-            
-        if not GEMINI_AVAILABLE:
+
+        # Import lazily to avoid heavy startup cost when cloud is unused.
+        if not _has_module("google.generativeai"):
             print("[GeminiTutor] google-generativeai not installed - cloud disabled")
+            return
+
+        try:
+            import google.generativeai as genai  # type: ignore
+        except ImportError:
+            print("[GeminiTutor] google-generativeai not installed - cloud disabled")
+            return
+
+        # Pillow is optional: only required for vision features.
+        # Keep it lazy so importing this module doesn't pull Pillow in on startup.
+        try:
+            import PIL  # noqa: F401
+        except ImportError:
+            print("[GeminiTutor] Pillow not installed - vision features disabled")
             return
         
         try:
@@ -96,8 +110,12 @@ class GeminiTutor:
             "If the child is struggling, suggest counting together."
         )
     
-    def _image_from_bytes(self, data: bytes) -> Image.Image:
-        """Convert raw image bytes to PIL Image."""
+    def _image_from_bytes(self, data: bytes) -> "PILImage.Image":
+        """Convert raw image bytes to PIL Image (optional dependency)."""
+        try:
+            from PIL import Image  # type: ignore
+        except ImportError as exc:
+            raise RuntimeError("Pillow is required for Gemini vision features") from exc
         return Image.open(io.BytesIO(data)).convert("RGB")
     
     def _check_rate_limit(self) -> bool:

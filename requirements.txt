@@ -2,5 +2,4 @@ PyQt6
 qasync>=0.28.0
 aiosqlite>=0.22.1
 edge-tts
-numpy
 google-generativeai
