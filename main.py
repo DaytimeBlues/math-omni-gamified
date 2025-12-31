@@ -17,6 +17,10 @@ FIXES APPLIED (AI Review):
 
 import sys
 import asyncio
+import logging
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
+
 from PyQt6.QtWidgets import QApplication, QMessageBox
 from PyQt6.QtCore import QTimer, Qt
 from qasync import QEventLoop
@@ -31,6 +35,38 @@ from ui.game_manager import GameManager
 from core.utils import safe_create_task
 from core.container import ServiceContainer
 from ui.premium_ui import MASTER_STYLESHEET
+
+
+logger = logging.getLogger(__name__)
+
+
+def configure_logging() -> Path:
+    """Configure rotating file logging (1MB max, 5 backups)."""
+    log_dir = Path("logs")
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_file = log_dir / "app.log"
+    
+    formatter = logging.Formatter(
+        fmt="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
+    
+    file_handler = RotatingFileHandler(
+        log_file, maxBytes=1_000_000, backupCount=5, encoding="utf-8"
+    )
+    file_handler.setFormatter(formatter)
+    
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+    root.handlers.clear()
+    root.addHandler(console_handler)
+    root.addHandler(file_handler)
+    
+    logger.info("Logging initialized: %s", log_file.resolve())
+    return log_file
 
 
 def create_stylesheet() -> str:
@@ -50,6 +86,10 @@ def main():
     - UI must never freeze while audio generates
     - Kids will rage-tap if app appears frozen
     """
+    # Initialize logging first
+    log_file = configure_logging()
+    logger.info("Math Omni starting up...")
+    
     # FIX: Z.ai - High DPI awareness
     app = QApplication(sys.argv)
     app.setAttribute(Qt.ApplicationAttribute.AA_DontCreateNativeWidgetSiblings)

@@ -364,15 +364,21 @@ class PremiumActivityView(QWidget):
         self.question_label.setText(prompt)
         self.egg_label.setText(str(eggs))
         
-        # Build visual display with safety cap
-        display_count = min(correct_answer, 12)  # Cap at 12 for visual space
-        visual = " ".join([emoji for _ in range(display_count)])
+        # Build visual display with grouping for large numbers
+        # Groups of 5 make counting easier (subitizing)
+        visual = self._build_grouped_visual(emoji, correct_answer)
         self.visual_label.setText(visual)
         
+        # Adjust font size based on count
+        if correct_answer > 10:
+            self.visual_label.setFont(QFont("Segoe UI Emoji", 32))  # Smaller
+        elif correct_answer > 5:
+            self.visual_label.setFont(QFont("Segoe UI Emoji", 40))  # Medium
+        else:
+            self.visual_label.setFont(QFont("Segoe UI Emoji", 48))  # Normal
+        
         # Debug: verify visual matches answer
-        print(f"[Activity] Level {level}: {correct_answer} {emoji} (showing {display_count})")
-        if display_count != correct_answer:
-            print(f"[Activity] WARNING: Visual capped! Answer is {correct_answer}")
+        print(f"[Activity] Level {level}: {correct_answer} {emoji}")
         
         # Reset and HIDE buttons until audio finishes
         for i, btn in enumerate(self._option_buttons):
@@ -381,6 +387,22 @@ class PremiumActivityView(QWidget):
             btn.setVisible(False)  # Hide during audio
         
         self.feedback_label.setText("Listen carefully...")
+    
+    def _build_grouped_visual(self, emoji: str, count: int) -> str:
+        """Build emoji display grouped in rows of 5 for easier counting."""
+        if count <= 5:
+            # Single row
+            return " ".join([emoji] * count)
+        
+        # Multiple rows of 5
+        rows = []
+        remaining = count
+        while remaining > 0:
+            row_count = min(5, remaining)
+            rows.append(" ".join([emoji] * row_count))
+            remaining -= row_count
+        
+        return "\n".join(rows)
     
     def _on_option_clicked(self, button: PremiumAnswerButton):
         """Handle answer selection."""
