@@ -1,18 +1,11 @@
 """
 Async Audio Service - Unified Channel Mixer & Cache Manager
-v3 Architecture: Thread-safe with race condition fixes.
-
-FIXES APPLIED (DeepSeek Review):
-- Narrow lock scope to avoid UI freeze during TTS playback
-- Qt.QueuedConnection for thread-safe _on_tts_status
-- Proper future cleanup with done callbacks
-- subprocess-based TTS generation (avoids nested event loops)
+v3 Architecture: Thread-safe with Gemini 2.5 Flash TTS.
 """
 import os
 import hashlib
 import asyncio
-import subprocess
-import shutil
+import importlib.util
 from typing import Dict, Optional, Set
 from pathlib import Path
 from collections import OrderedDict
@@ -223,15 +216,12 @@ class AudioService(QObject):
                     self._current_tts_future = None
 
     async def _generate_tts(self, text: str, target_path: Path) -> bool:
-        """
-        AI GENERATION: Using Gemini 2.5 Flash TTS for high quality.
-        Replaces robots with natural speech.
-        """
-        try:
-            from google import genai
-        except ImportError:
-            print("[Audio] google-genai not installed. Falling back to static cache.")
+        """Generate TTS using Gemini 2.5 Flash."""
+        if importlib.util.find_spec("google.genai") is None:
+            print("[Audio] google-genai not installed. Dynamic TTS unavailable.")
             return False
+
+        from google import genai
 
         # SECURITY: Never fallback to hardcoded keys
         api_key = os.environ.get("GOOGLE_API_KEY")
