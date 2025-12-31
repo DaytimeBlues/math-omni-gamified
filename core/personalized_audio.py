@@ -40,17 +40,18 @@ class PersonalizedAudio:
         self._output = QAudioOutput()
         self._player.setAudioOutput(self._output)
         self._output.setVolume(1.0)
+
+        # Cache resolved file paths to avoid repeated filesystem checks
+        # during gameplay (micro-optimization, but this path is hot).
+        self._resolved_paths: dict[str, str] = {}
+        for clip_name, filename in PERSONALIZED_CLIPS.items():
+            path = ASSETS_DIR / filename
+            if path.exists():
+                self._resolved_paths[clip_name] = str(path)
     
     def _get_path(self, clip_name: str) -> str | None:
         """Get full path for a clip name."""
-        filename = PERSONALIZED_CLIPS.get(clip_name)
-        if not filename:
-            return None
-        
-        path = ASSETS_DIR / filename
-        if path.exists():
-            return str(path)
-        return None
+        return self._resolved_paths.get(clip_name)
     
     def play(self, clip_name: str) -> bool:
         """
