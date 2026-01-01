@@ -125,7 +125,7 @@ class Director(QObject):
         try:
             from core.audio_service import AudioService
             audio = self.container.resolve(AudioService)
-            audio._duck_others(True)
+            audio.duck_music(True)
         except Exception:
             pass
 
@@ -135,7 +135,7 @@ class Director(QObject):
         try:
             from core.audio_service import AudioService
             audio = self.container.resolve(AudioService)
-            audio._duck_others(False)
+            audio.duck_music(False)
         except Exception:
             pass
 
