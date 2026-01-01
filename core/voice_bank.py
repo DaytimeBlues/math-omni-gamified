@@ -13,11 +13,15 @@ import random
 import yaml
 import hashlib
 import asyncio
+import logging
 from pathlib import Path
 from typing import List, Tuple, Optional
 
 from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
 from PyQt6.QtCore import QUrl
+
+
+logger = logging.getLogger(__name__)
 
 
 SCRIPT_DIR = Path(__file__).parent.parent
@@ -66,6 +70,7 @@ class VoiceBank:
         """Load phrase catalog and verify audio files exist."""
         if not VOICE_BANK_YAML.exists():
             print(f"[VoiceBank] YAML not found: {VOICE_BANK_YAML}")
+            logger.warning("Voice bank YAML not found: %s", VOICE_BANK_YAML)
             return
         
         try:

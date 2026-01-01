@@ -65,6 +65,7 @@ class GameManager(QMainWindow):
         
         # Voice Bank (Replacing PersonalizedAudio and robots)
         self.voice_bank = VoiceBank()
+        self.audio.set_voice_stop_callback(self.voice_bank.stop)
         
         # State tracking
         self.stack = QStackedWidget()
