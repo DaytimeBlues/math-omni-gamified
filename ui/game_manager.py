@@ -9,9 +9,15 @@ FIXES APPLIED (AI Review):
 - Proper encapsulation - _welcome remains private (Z.ai)
 - Safe task creation for background exceptions (Z.ai)
 - Proper Director state transitions (Codex)
+
+PHASE 3 UPDATE:
+- Refactored to use MathWorld enum instead of indices
+- Support for Addition (W2) and Subtraction (W3) operations
+- Operation-aware hint engine and audio prompts
 """
 
 import asyncio
+from typing import Optional
 
 from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import QMainWindow, QStackedWidget
@@ -19,6 +25,7 @@ from PyQt6.QtWidgets import QMainWindow, QStackedWidget
 from config import MAP_LEVELS_COUNT, REWARD_CORRECT, REWARD_COMPLETION
 from core.audio_service import AudioService
 from core.container import ServiceContainer
+from core.contracts import MathWorld, Operation, get_operation_for_world
 from core.database import DatabaseService
 from core.director import AppState, Director
 from core.hint_engine import RuleBasedHintEngine
@@ -53,10 +60,13 @@ class GameManager(QMainWindow):
         
         # State
         self.current_level = None
+        self.current_world: MathWorld = MathWorld.W1  # Default to counting
+        self.current_operation: str = Operation.COUNTING.value
         self.current_eggs = 0
         self._initialized = False
         self._wrong_attempts = 0
         self._current_item_name = None  # For VoiceBank item lookup
+        self._current_problem_data: Optional[dict] = None  # Full problem data
         self._pending_tasks: set[asyncio.Task] = set()
         self._hint_timer: Optional[QTimer] = None
         
@@ -145,17 +155,26 @@ class GameManager(QMainWindow):
         
         self.director.set_state(AppState.IDLE)
     
-    def _start_level(self, level: int):
-        """Start a level - generate problem and show activity view."""
+    def _start_level(self, level: int, world: MathWorld = MathWorld.W1):
+        """
+        Start a level - generate problem and show activity view.
+        
+        Args:
+            level: Level number within the world (1-10)
+            world: MathWorld enum (W1=Counting, W2=Addition, W3=Subtraction)
+        """
         self._cancel_pending()
         self.current_level = level
+        self.current_world = world
+        self.current_operation = get_operation_for_world(world)
         self._wrong_attempts = 0  # Reset hints for new level
         
-        # Generate problem (0-indexed)
-        data = self.factory.generate(level - 1)
+        # Generate problem using world-aware factory method
+        data = self.factory.generate_for_world(world, level)
         self._current_item_name = data['item_name']  # For VoiceBank lookup
+        self._current_problem_data = data  # Store full problem data
         
-        # Configure activity view
+        # Configure activity view with visual_config for Phase 3
         self.activity_view.set_activity(
             level=level,
             prompt=data['prompt'],
@@ -164,7 +183,9 @@ class GameManager(QMainWindow):
             host_text=data['host'],
             emoji=data['emoji'],
             eggs=self.current_eggs,
-            item_name=data['item_name']  # For VoiceBank
+            item_name=data['item_name'],
+            visual_config=data.get('visual_config', {}),  # Phase 3: visual mode
+            operation=self.current_operation  # Phase 3: operation type
         )
         
         # Switch view
@@ -238,9 +259,28 @@ class GameManager(QMainWindow):
         # 1. Level Start phrase
         await self.voice_bank.play_random_async("level_start")
         
-        # 2. Item-specific question 
-        item_category = f"items_{self._current_item_name}"
-        await self.voice_bank.play_random_async(item_category)
+        # 2. Operation-specific introduction (Phase 3)
+        if self.current_operation == Operation.ADDITION.value:
+            # For addition: play world intro if first level, then item prompt
+            if level == 1 and self.voice_bank.has_category("world_2_intro"):
+                await self.voice_bank.play_random_async("world_2_intro")
+            # Item-specific question for addition
+            item_category = f"items_{self._current_item_name}"
+            if self.voice_bank.has_category(item_category):
+                await self.voice_bank.play_random_async(item_category)
+        elif self.current_operation == Operation.SUBTRACTION.value:
+            # For subtraction: play world intro if first level, then item prompt
+            if level == 1 and self.voice_bank.has_category("world_3_intro"):
+                await self.voice_bank.play_random_async("world_3_intro")
+            # Item-specific question for subtraction
+            item_category = f"items_{self._current_item_name}"
+            if self.voice_bank.has_category(item_category):
+                await self.voice_bank.play_random_async(item_category)
+        else:
+            # Default counting behavior
+            item_category = f"items_{self._current_item_name}"
+            if self.voice_bank.has_category(item_category):
+                await self.voice_bank.play_random_async(item_category)
         
         self.director.set_state(AppState.INPUT_ACTIVE)
 
@@ -261,7 +301,8 @@ class GameManager(QMainWindow):
 
     def _process_hint_after_delay(self) -> None:
         """Process hint after encouragement audio finishes."""
-        hint = self.hint_engine.get_hint("counting", self._wrong_attempts)
+        # Use operation-aware hints (Phase 3)
+        hint = self.hint_engine.get_hint(self.current_operation, self._wrong_attempts)
         if hint:
             self._track_task(self._play_hint_and_resume(hint.message))
         else:
