@@ -9,7 +9,14 @@ Claude's Implementation:
 - Generous whitespace
 
 Reference: The uploaded target design screenshot
+
+PHASE 3 UPDATE:
+- Support for visual_config schema (scatter/merge/take_away modes)
+- Operation-aware visual rendering for Addition and Subtraction
+- Concrete stage visualizations following Dr. Maria's pedagogy
 """
+
+from typing import Dict, Optional
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
@@ -24,6 +31,7 @@ from config import (
 )
 from core.sfx import SFX
 from core.director import AppState
+from core.contracts import VisualType, Operation
 
 
 # =============================================================================
@@ -211,6 +219,10 @@ class PremiumActivityView(QWidget):
         self._correct_answer = None
         self._interaction_locked = False
         
+        # Phase 3: Operation-aware state
+        self._current_operation: str = Operation.COUNTING.value
+        self._visual_config: Dict = {}
+        
         # Connect to Director
         self.director.state_changed.connect(self._on_state_change)
         
@@ -350,35 +362,64 @@ class PremiumActivityView(QWidget):
         return layout
     
     # ==========================================================================
-    # ACTIVITY LOGIC (Same as original)
+    # ACTIVITY LOGIC (Phase 3 Updated)
     # ==========================================================================
     
-    def set_activity(self, level: int, prompt: str, options: list, 
-                     correct_answer: int, host_text: str, emoji: str, eggs: int,
-                     item_name: str = None):
-        """Configure the activity view for a new problem."""
+    def set_activity(
+        self, 
+        level: int, 
+        prompt: str, 
+        options: list, 
+        correct_answer: int, 
+        host_text: str, 
+        emoji: str, 
+        eggs: int,
+        item_name: str = None,
+        visual_config: Optional[Dict] = None,
+        operation: str = "counting"
+    ):
+        """
+        Configure the activity view for a new problem.
+        
+        Phase 3 Update: Now supports visual_config schema for different
+        visual modes (scatter/count, merge, take_away).
+        
+        Args:
+            level: Level number
+            prompt: Question prompt text
+            options: Answer options
+            correct_answer: The correct answer value
+            host_text: Host/tutor text
+            emoji: Emoji for concrete items
+            eggs: Current egg count
+            item_name: Name of item for VoiceBank
+            visual_config: Dict with 'type', and operation-specific keys
+            operation: Operation type ('counting', 'addition', 'subtraction')
+        """
         self._correct_answer = correct_answer
         self._interaction_locked = True  # Lock until audio finishes
+        self._visual_config = visual_config or {}
+        self._current_operation = operation
         
         self.level_label.setText(f"Level {level}")
         self.question_label.setText(prompt)
         self.egg_label.setText(str(eggs))
         
-        # Build visual display with grouping for large numbers
-        # Groups of 5 make counting easier (subitizing)
-        visual = self._build_grouped_visual(emoji, correct_answer)
+        # Build visual display based on visual_config type (Phase 3)
+        visual = self._build_visual_from_config(emoji, correct_answer, visual_config, operation)
         self.visual_label.setText(visual)
         
-        # Adjust font size based on count
-        if correct_answer > 10:
+        # Adjust font size based on total items shown
+        total_items = self._get_total_items(visual_config, correct_answer)
+        if total_items > 10:
             self.visual_label.setFont(QFont("Segoe UI Emoji", 32))  # Smaller
-        elif correct_answer > 5:
+        elif total_items > 5:
             self.visual_label.setFont(QFont("Segoe UI Emoji", 40))  # Medium
         else:
             self.visual_label.setFont(QFont("Segoe UI Emoji", 48))  # Normal
         
         # Debug: verify visual matches answer
-        print(f"[Activity] Level {level}: {correct_answer} {emoji}")
+        print(f"[Activity] Level {level}: {operation} -> {correct_answer} {emoji}")
         
         # Reset and HIDE buttons until audio finishes
         for i, btn in enumerate(self._option_buttons):
@@ -387,6 +428,104 @@ class PremiumActivityView(QWidget):
             btn.setVisible(False)  # Hide during audio
         
         self.feedback_label.setText("Listen carefully...")
+    
+    def _build_visual_from_config(
+        self, 
+        emoji: str, 
+        target: int, 
+        visual_config: Optional[Dict],
+        operation: str
+    ) -> str:
+        """
+        Build visual display based on visual_config type.
+        
+        Supports three visual modes:
+        - 'count' (scatter): Single group for counting (World 1)
+        - 'merge': Two groups combining for addition (World 2)
+        - 'take_away': Items with some crossed out for subtraction (World 3)
+        
+        Args:
+            emoji: The emoji to display
+            target: The correct answer
+            visual_config: Configuration dict with type and counts
+            operation: Operation type string
+            
+        Returns:
+            Formatted string for visual display
+        """
+        if not visual_config:
+            # Fallback to simple grouped visual
+            return self._build_grouped_visual(emoji, target)
+        
+        visual_type = visual_config.get("type", VisualType.COUNT.value)
+        
+        if visual_type == VisualType.MERGE.value:
+            # Addition: Show two groups with a plus sign between them
+            return self._build_merge_visual(emoji, visual_config)
+        
+        elif visual_type == VisualType.TAKE_AWAY.value:
+            # Subtraction: Show total with some items crossed out/faded
+            return self._build_take_away_visual(emoji, visual_config)
+        
+        else:
+            # Default: Counting (scatter/grouped)
+            count = visual_config.get("count", target)
+            return self._build_grouped_visual(emoji, count)
+    
+    def _build_merge_visual(self, emoji: str, visual_config: Dict) -> str:
+        """
+        Build addition visual showing two groups combining.
+        
+        Layout: Group A  +  Group B
+        Example: 🍎 🍎  ➕  🍎 🍎 🍎
+        """
+        group_a = visual_config.get("group_a_count", 1)
+        group_b = visual_config.get("group_b_count", 1)
+        
+        # Build group A (left side)
+        group_a_visual = " ".join([emoji] * group_a)
+        
+        # Build group B (right side)
+        group_b_visual = " ".join([emoji] * group_b)
+        
+        # Combine with plus symbol
+        return f"{group_a_visual}  ➕  {group_b_visual}"
+    
+    def _build_take_away_visual(self, emoji: str, visual_config: Dict) -> str:
+        """
+        Build subtraction visual showing items being removed.
+        
+        Layout: Shows total with removed items using strikethrough style
+        Example: 🍎 🍎 🍎 ❌ ❌ (3 apples, 2 removed)
+        
+        Alternative layout using transparency marker:
+        🍎 🍎 🍎  ➖  👻 👻 (showing what's taken away)
+        """
+        start_count = visual_config.get("start_count", 3)
+        remove_count = visual_config.get("remove_count", 1)
+        remaining = start_count - remove_count
+        
+        # Method 1: Show remaining with "ghost" items for removed
+        # This helps children see the full equation visually
+        remaining_visual = " ".join([emoji] * remaining)
+        removed_visual = " ".join(["👻"] * remove_count)
+        
+        # Show: remaining items | minus | removed items
+        return f"{remaining_visual}  ➖  {removed_visual}"
+    
+    def _get_total_items(self, visual_config: Optional[Dict], fallback: int) -> int:
+        """Get total number of items to display for font sizing."""
+        if not visual_config:
+            return fallback
+        
+        visual_type = visual_config.get("type", VisualType.COUNT.value)
+        
+        if visual_type == VisualType.MERGE.value:
+            return visual_config.get("group_a_count", 0) + visual_config.get("group_b_count", 0)
+        elif visual_type == VisualType.TAKE_AWAY.value:
+            return visual_config.get("start_count", fallback)
+        else:
+            return visual_config.get("count", fallback)
     
     def _build_grouped_visual(self, emoji: str, count: int) -> str:
         """Build emoji display grouped in rows of 5 for easier counting."""
@@ -471,8 +610,41 @@ class PremiumActivityView(QWidget):
             self.feedback_label.setStyleSheet(f"color: {COLORS['text_light']}; background: transparent;")
     
     def show_visual_hint(self, hint_name: str):
-        """Display a visual hint."""
+        """
+        Display a visual hint based on the current operation.
+        
+        Phase 3: Operation-aware visual hints
+        - counting: pulse_correct_area, highlight_groups
+        - addition: group_numbers, animate_merge
+        - subtraction: highlight_removal, animate_take_away
+        """
         print(f"[PremiumActivityView] Visual Hint: {hint_name}")
+        
+        # Operation-specific hint handling
+        if hint_name == "group_numbers" and self._current_operation == Operation.ADDITION.value:
+            # For addition: highlight the two groups
+            self._highlight_merge_groups()
+        elif hint_name == "animate_take_away" and self._current_operation == Operation.SUBTRACTION.value:
+            # For subtraction: animate items disappearing
+            self._animate_removal()
+        elif hint_name == "highlight_removal":
+            # Highlight items being removed
+            self._highlight_removed_items()
+        # Default: just log it
+    
+    def _highlight_merge_groups(self):
+        """Highlight the two groups in an addition problem."""
+        # This would animate/pulse the groups - placeholder for animation
+        print("[PremiumActivityView] Highlighting merge groups")
+    
+    def _animate_removal(self):
+        """Animate items being removed in subtraction."""
+        # This would animate items fading - placeholder for animation
+        print("[PremiumActivityView] Animating removal")
+    
+    def _highlight_removed_items(self):
+        """Highlight items that are being removed."""
+        print("[PremiumActivityView] Highlighting removed items")
 
 
 class SkipOverlay(QWidget):

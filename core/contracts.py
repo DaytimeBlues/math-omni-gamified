@@ -21,6 +21,23 @@ class WorldID(str, Enum):
     W3 = "W3"  # Subtraction
 
 
+# Alias for backward compatibility and clarity
+MathWorld = WorldID
+
+
+# World to Operation mapping
+WORLD_OPERATION_MAP = {
+    WorldID.W1: "counting",
+    WorldID.W2: "addition",
+    WorldID.W3: "subtraction",
+}
+
+
+def get_operation_for_world(world: WorldID) -> str:
+    """Get the operation type for a given world."""
+    return WORLD_OPERATION_MAP.get(world, "counting")
+
+
 class Operation(str, Enum):
     """Supported math operations."""
     COUNTING = "counting"

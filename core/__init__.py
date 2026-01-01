@@ -11,6 +11,7 @@ Provides:
 from core.contracts import (
     ProblemData,
     WorldID,
+    MathWorld,  # Alias for WorldID
     Operation,
     CPAStage,
     VisualType,
@@ -19,6 +20,8 @@ from core.contracts import (
     make_level_id,
     parse_level_id,
     get_level_config,
+    get_operation_for_world,
+    WORLD_OPERATION_MAP,
 )
 
 from core.strategies import (
@@ -34,6 +37,7 @@ __all__ = [
     # Contracts
     "ProblemData",
     "WorldID",
+    "MathWorld",
     "Operation",
     "CPAStage",
     "VisualType",
@@ -42,6 +46,8 @@ __all__ = [
     "make_level_id",
     "parse_level_id",
     "get_level_config",
+    "get_operation_for_world",
+    "WORLD_OPERATION_MAP",
     # Strategies
     "ProblemStrategy",
     "CountingStrategy",

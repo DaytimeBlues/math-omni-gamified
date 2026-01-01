@@ -18,8 +18,11 @@ from core.contracts import (
     ProblemData,
     Operation,
     WorldID,
+    MathWorld,
     LevelConfig,
     get_level_config,
+    get_operation_for_world,
+    WORLD_OPERATION_MAP,
     WORLD_2_LEVELS,
     WORLD_3_LEVELS,
 )
@@ -186,3 +189,27 @@ class ProblemFactory:
             HOST_PROMPTS[Operation.COUNTING.value]
         ))
         return result
+    
+    def generate_for_world(
+        self,
+        world: WorldID,
+        level_in_world: int
+    ) -> dict:
+        """
+        Generate a problem for a specific world and level.
+        
+        This is the primary API for Phase 3, replacing index-based generation.
+        
+        Args:
+            world: WorldID enum (W1=Counting, W2=Addition, W3=Subtraction)
+            level_in_world: Level number within the world (1-10)
+            
+        Returns:
+            Dictionary with problem data including visual_config
+        """
+        operation = get_operation_for_world(world)
+        return self.generate_as_dict(
+            operation=operation,
+            difficulty=level_in_world,
+            level_idx=level_in_world - 1
+        )

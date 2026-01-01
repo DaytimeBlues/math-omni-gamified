@@ -2,7 +2,14 @@
 """Tests for the Problem Factory."""
 import pytest
 from core.problem_factory import ProblemFactory
-from core.contracts import Operation, ProblemData
+from core.contracts import (
+    Operation, 
+    ProblemData, 
+    MathWorld, 
+    WorldID,
+    VisualType,
+    get_operation_for_world,
+)
 
 
 @pytest.fixture
@@ -182,3 +189,61 @@ class TestGenerateAsDict:
         )
         assert 'visual_config' in result
         assert 'audio_sequence' in result
+
+
+class TestGenerateForWorld:
+    """Tests for the generate_for_world method (Phase 3)."""
+    
+    def test_generate_for_world_counting(self, factory: ProblemFactory):
+        """Should generate counting problems for W1."""
+        result = factory.generate_for_world(MathWorld.W1, level_in_world=3)
+        assert isinstance(result, dict)
+        assert result['type'] == Operation.COUNTING.value
+        assert result['level'] == 3
+    
+    def test_generate_for_world_addition(self, factory: ProblemFactory):
+        """Should generate addition problems for W2."""
+        result = factory.generate_for_world(MathWorld.W2, level_in_world=5)
+        assert result['type'] == Operation.ADDITION.value
+        assert result['level'] == 5
+        assert 'visual_config' in result
+        assert result['visual_config']['type'] == VisualType.MERGE.value
+    
+    def test_generate_for_world_subtraction(self, factory: ProblemFactory):
+        """Should generate subtraction problems for W3."""
+        result = factory.generate_for_world(MathWorld.W3, level_in_world=7)
+        assert result['type'] == Operation.SUBTRACTION.value
+        assert result['level'] == 7
+        assert 'visual_config' in result
+        assert result['visual_config']['type'] == VisualType.TAKE_AWAY.value
+    
+    def test_generate_for_world_has_required_keys(self, factory: ProblemFactory):
+        """Should have all required keys for game manager."""
+        result = factory.generate_for_world(MathWorld.W2, level_in_world=1)
+        required_keys = [
+            'type', 'level', 'target', 'options', 'prompt',
+            'emoji', 'item_name', 'host', 'visual_config', 'audio_sequence'
+        ]
+        for key in required_keys:
+            assert key in result, f"Missing key: {key}"
+
+
+class TestMathWorldHelpers:
+    """Tests for MathWorld enum and helpers."""
+    
+    def test_math_world_is_alias_for_world_id(self):
+        """MathWorld should be an alias for WorldID."""
+        assert MathWorld is WorldID
+        assert MathWorld.W1 == WorldID.W1
+    
+    def test_get_operation_for_world_counting(self):
+        """W1 should map to counting."""
+        assert get_operation_for_world(MathWorld.W1) == Operation.COUNTING.value
+    
+    def test_get_operation_for_world_addition(self):
+        """W2 should map to addition."""
+        assert get_operation_for_world(MathWorld.W2) == Operation.ADDITION.value
+    
+    def test_get_operation_for_world_subtraction(self):
+        """W3 should map to subtraction."""
+        assert get_operation_for_world(MathWorld.W3) == Operation.SUBTRACTION.value
