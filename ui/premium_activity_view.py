@@ -8,8 +8,15 @@ Claude's Implementation:
 - Pill-shaped egg counter
 - Generous whitespace
 
+Phase 3 Updates:
+- Supports visual_config schema with scatter, merge, take_away modes
+- Dynamic visual rendering based on MathWorld
+- Animated transitions for merge/take_away operations
+
 Reference: The uploaded target design screenshot
 """
+
+from typing import Optional, Dict, Any
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
@@ -183,6 +190,11 @@ class PremiumActivityView(QWidget):
     """
     Premium Activity View matching the reference design.
     
+    Phase 3: Supports multiple visual modes:
+    - scatter: Items displayed in grouped rows (counting)
+    - merge: Two groups shown, then combined (addition)
+    - take_away: Full group shown, some fade out (subtraction)
+    
     Layout:
     ┌────────────────────────────────────────┐
     │  [←]          Level 1          🥚 90   │  Header
@@ -210,6 +222,8 @@ class PremiumActivityView(QWidget):
         self.audio = audio_service
         self._correct_answer = None
         self._interaction_locked = False
+        self._current_visual_config: Optional[Dict[str, Any]] = None
+        self._current_world = None  # Track current MathWorld
         
         # Connect to Director
         self.director.state_changed.connect(self._on_state_change)
@@ -355,30 +369,58 @@ class PremiumActivityView(QWidget):
     
     def set_activity(self, level: int, prompt: str, options: list, 
                      correct_answer: int, host_text: str, emoji: str, eggs: int,
-                     item_name: str = None):
-        """Configure the activity view for a new problem."""
+                     item_name: str = None, visual_config: Optional[Dict[str, Any]] = None,
+                     world = None):
+        """
+        Configure the activity view for a new problem.
+        
+        Phase 3: Supports visual_config schema for different visual modes:
+        - scatter: Traditional counting display (grouped rows)
+        - merge: Two groups shown separately (addition)
+        - take_away: Full group with some fading out (subtraction)
+        
+        Args:
+            level: Level number to display
+            prompt: Question prompt text
+            options: List of answer options
+            correct_answer: The correct answer value
+            host_text: Text for voice prompt
+            emoji: Emoji to display
+            eggs: Current egg count
+            item_name: Item name for VoiceBank lookup
+            visual_config: Optional visual configuration dict
+            world: Optional MathWorld enum for context
+        """
         self._correct_answer = correct_answer
         self._interaction_locked = True  # Lock until audio finishes
+        self._current_visual_config = visual_config
+        self._current_world = world
         
         self.level_label.setText(f"Level {level}")
         self.question_label.setText(prompt)
         self.egg_label.setText(str(eggs))
         
-        # Build visual display with grouping for large numbers
-        # Groups of 5 make counting easier (subitizing)
-        visual = self._build_grouped_visual(emoji, correct_answer)
+        # Phase 3: Build visual based on visual_config mode
+        if visual_config:
+            visual = self._build_visual_from_config(visual_config)
+        else:
+            # Fallback to legacy grouped visual (counting)
+            visual = self._build_grouped_visual(emoji, correct_answer)
+        
         self.visual_label.setText(visual)
         
-        # Adjust font size based on count
-        if correct_answer > 10:
+        # Adjust font size based on total item count
+        total_items = self._get_total_items_from_config(visual_config, correct_answer)
+        if total_items > 10:
             self.visual_label.setFont(QFont("Segoe UI Emoji", 32))  # Smaller
-        elif correct_answer > 5:
+        elif total_items > 5:
             self.visual_label.setFont(QFont("Segoe UI Emoji", 40))  # Medium
         else:
             self.visual_label.setFont(QFont("Segoe UI Emoji", 48))  # Normal
         
         # Debug: verify visual matches answer
-        print(f"[Activity] Level {level}: {correct_answer} {emoji}")
+        mode = visual_config.get('mode', 'scatter') if visual_config else 'scatter'
+        print(f"[Activity] Level {level} ({mode}): {correct_answer} {emoji}")
         
         # Reset and HIDE buttons until audio finishes
         for i, btn in enumerate(self._option_buttons):
@@ -387,6 +429,94 @@ class PremiumActivityView(QWidget):
             btn.setVisible(False)  # Hide during audio
         
         self.feedback_label.setText("Listen carefully...")
+    
+    def _get_total_items_from_config(self, visual_config: Optional[Dict[str, Any]], 
+                                      fallback: int) -> int:
+        """Get total item count from visual_config for font sizing."""
+        if not visual_config:
+            return fallback
+        
+        mode = visual_config.get('mode', 'scatter')
+        group_a = visual_config.get('group_a', fallback)
+        group_b = visual_config.get('group_b', 0)
+        
+        if mode == 'merge':
+            return group_a + group_b
+        elif mode == 'take_away':
+            return group_a  # Show full group before removal
+        else:  # scatter
+            return group_a
+    
+    def _build_visual_from_config(self, config: Dict[str, Any]) -> str:
+        """
+        Build visual display based on visual_config schema.
+        
+        Phase 3: Supports three modes:
+        - scatter: Items in grouped rows (counting)
+        - merge: Two groups with '+' operator (addition)
+        - take_away: Full group with strikethrough/faded items (subtraction)
+        
+        Args:
+            config: Visual configuration dictionary with mode, group_a, group_b, emoji
+            
+        Returns:
+            Formatted string for visual_label
+        """
+        mode = config.get('mode', 'scatter')
+        emoji = config.get('emoji', '🍎')
+        group_a = config.get('group_a', 0)
+        group_b = config.get('group_b', 0)
+        
+        if mode == 'scatter':
+            return self._build_scatter_visual(emoji, group_a)
+        elif mode == 'merge':
+            return self._build_merge_visual(emoji, group_a, group_b)
+        elif mode == 'take_away':
+            return self._build_take_away_visual(emoji, group_a, group_b)
+        else:
+            # Unknown mode, fall back to scatter
+            return self._build_scatter_visual(emoji, group_a)
+    
+    def _build_scatter_visual(self, emoji: str, count: int) -> str:
+        """
+        Build scatter mode visual (counting).
+        Items displayed in grouped rows of 5 for subitizing.
+        """
+        return self._build_grouped_visual(emoji, count)
+    
+    def _build_merge_visual(self, emoji: str, group_a: int, group_b: int) -> str:
+        """
+        Build merge mode visual (addition).
+        
+        Shows two groups with a '+' between them:
+        🍎 🍎 🍎  +  🍎 🍎
+        """
+        # Build first group
+        part_a = " ".join([emoji] * group_a)
+        
+        # Build second group
+        part_b = " ".join([emoji] * group_b)
+        
+        # Combine with plus sign
+        return f"{part_a}  ➕  {part_b}"
+    
+    def _build_take_away_visual(self, emoji: str, total: int, removed: int) -> str:
+        """
+        Build take_away mode visual (subtraction).
+        
+        Shows full group with some items crossed out:
+        🍎 🍎 🍎  ➖  ❌ ❌
+        
+        Or alternatively show remaining and removed:
+        🍎 🍎 🍎 | 🍎 🍎 (faded)
+        """
+        remaining = total - removed
+        
+        # Show remaining items + minus sign + removed indicator
+        remaining_part = " ".join([emoji] * remaining)
+        removed_part = " ".join(["❌"] * removed)
+        
+        return f"{remaining_part}  ➖  {removed_part}"
     
     def _build_grouped_visual(self, emoji: str, count: int) -> str:
         """Build emoji display grouped in rows of 5 for easier counting."""

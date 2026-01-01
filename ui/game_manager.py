@@ -9,9 +9,15 @@ FIXES APPLIED (AI Review):
 - Proper encapsulation - _welcome remains private (Z.ai)
 - Safe task creation for background exceptions (Z.ai)
 - Proper Director state transitions (Codex)
+
+Phase 3 Updates:
+- Uses MathWorld enum for world selection
+- Supports Addition and Subtraction strategies
+- Passes visual_config to ActivityView
 """
 
 import asyncio
+from typing import Optional
 
 from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import QMainWindow, QStackedWidget
@@ -23,6 +29,7 @@ from core.database import DatabaseService
 from core.director import AppState, Director
 from core.hint_engine import RuleBasedHintEngine
 from core.problem_factory import ProblemFactory
+from core.problem_strategy import MathWorld, VisualMode
 from core.sfx import SFX
 from core.utils import safe_create_task
 from core.voice_bank import VoiceBank, get_success_category, get_wrong_category, get_hint_category
@@ -35,7 +42,16 @@ class GameManager(QMainWindow):
     """
     Main game controller using QStackedWidget for view switching.
     Managed by 'Director' state machine.
+    
+    Phase 3: Supports multiple MathWorlds via enum-based selection.
     """
+    
+    # Level ranges for each MathWorld (can be configured)
+    WORLD_LEVEL_RANGES = {
+        MathWorld.COUNTING: (1, 10),      # Levels 1-10: Counting
+        MathWorld.ADDITION: (11, 20),     # Levels 11-20: Addition
+        MathWorld.SUBTRACTION: (21, 30),  # Levels 21-30: Subtraction
+    }
     
     def __init__(self, container: ServiceContainer):
         super().__init__()
@@ -53,6 +69,7 @@ class GameManager(QMainWindow):
         
         # State
         self.current_level = None
+        self.current_world: MathWorld = MathWorld.COUNTING  # Phase 3: Track current world
         self.current_eggs = 0
         self._initialized = False
         self._wrong_attempts = 0
@@ -145,17 +162,72 @@ class GameManager(QMainWindow):
         
         self.director.set_state(AppState.IDLE)
     
-    def _start_level(self, level: int):
-        """Start a level - generate problem and show activity view."""
+    def _determine_world_for_level(self, level: int) -> MathWorld:
+        """
+        Determine which MathWorld a level belongs to.
+        
+        Uses WORLD_LEVEL_RANGES to map level numbers to worlds.
+        Falls back to COUNTING for levels outside defined ranges.
+        
+        Args:
+            level: 1-indexed level number
+            
+        Returns:
+            MathWorld enum value
+        """
+        for world, (start, end) in self.WORLD_LEVEL_RANGES.items():
+            if start <= level <= end:
+                return world
+        return MathWorld.COUNTING
+    
+    def _get_level_index_for_world(self, level: int, world: MathWorld) -> int:
+        """
+        Convert global level to 0-indexed world-relative level.
+        
+        Args:
+            level: Global 1-indexed level number
+            world: The MathWorld the level belongs to
+            
+        Returns:
+            0-indexed level within the world
+        """
+        start, _ = self.WORLD_LEVEL_RANGES.get(world, (1, 10))
+        return level - start
+    
+    def _start_level(self, level: int, world: Optional[MathWorld] = None):
+        """
+        Start a level - generate problem and show activity view.
+        
+        Phase 3: Uses MathWorld enum for world selection.
+        
+        Args:
+            level: 1-indexed level number
+            world: Optional MathWorld override (auto-detected if None)
+        """
         self._cancel_pending()
         self.current_level = level
         self._wrong_attempts = 0  # Reset hints for new level
         
-        # Generate problem (0-indexed)
-        data = self.factory.generate(level - 1)
+        # Phase 3: Determine world from level or use override
+        self.current_world = world or self._determine_world_for_level(level)
+        self.factory.set_world(self.current_world)
+        
+        # Get world-relative level index (0-based)
+        level_idx = self._get_level_index_for_world(level, self.current_world)
+        
+        # Generate problem using strategy pattern
+        data = self.factory.generate(level_idx, self.current_world)
         self._current_item_name = data['item_name']  # For VoiceBank lookup
         
-        # Configure activity view
+        # Phase 3: Extract visual_config for activity view
+        visual_config = data.get('visual_config', {
+            'mode': 'scatter',
+            'group_a': data['target'],
+            'group_b': 0,
+            'emoji': data['emoji'],
+        })
+        
+        # Configure activity view with visual_config
         self.activity_view.set_activity(
             level=level,
             prompt=data['prompt'],
@@ -164,7 +236,9 @@ class GameManager(QMainWindow):
             host_text=data['host'],
             emoji=data['emoji'],
             eggs=self.current_eggs,
-            item_name=data['item_name']  # For VoiceBank
+            item_name=data['item_name'],  # For VoiceBank
+            visual_config=visual_config,  # Phase 3: New visual config
+            world=self.current_world,  # Phase 3: Pass world info
         )
         
         # Switch view
@@ -259,9 +333,19 @@ class GameManager(QMainWindow):
         self.director.set_state(AppState.INPUT_ACTIVE)
         self.activity_view.reset_interaction()
 
+    def _get_hint_category_for_world(self) -> str:
+        """Get hint category based on current MathWorld."""
+        category_map = {
+            MathWorld.COUNTING: "counting",
+            MathWorld.ADDITION: "addition",
+            MathWorld.SUBTRACTION: "subtraction",
+        }
+        return category_map.get(self.current_world, "counting")
+    
     def _process_hint_after_delay(self) -> None:
         """Process hint after encouragement audio finishes."""
-        hint = self.hint_engine.get_hint("counting", self._wrong_attempts)
+        hint_category = self._get_hint_category_for_world()
+        hint = self.hint_engine.get_hint(hint_category, self._wrong_attempts)
         if hint:
             self._track_task(self._play_hint_and_resume(hint.message))
         else:

@@ -1,63 +1,115 @@
 """
 Problem Factory - Dynamic Math Problem Generation
 
-Generates counting problems with linear difficulty scaling.
+Phase 3: Uses Strategy Pattern for multi-world support.
+Supports Counting, Addition, and Subtraction problem generation.
+
+Architecture:
+- ProblemFactory delegates to registered strategies
+- MathWorld enum selects the appropriate strategy
+- Backwards compatible with legacy generate(level_idx) calls
 """
 
-import random
-from config import CONCRETE_ITEMS
+from typing import Optional, Union
 
-# Pedagogically appropriate prompts that don't give away the answer
-HOST_PROMPTS = [
-    "How many can you count?",
-    "Let's count together!",
-    "Can you count these?",
-    "Count carefully!",
-    "How many do you see?",
-    "Take your time and count!",
-]
+from core.problem_strategy import (
+    MathWorld,
+    ProblemData,
+    ProblemStrategy,
+    StrategyRegistry,
+    CountingStrategy,
+    VisualMode,
+)
 
 
 class ProblemFactory:
-    """Generates math problems scaled to level index."""
+    """
+    Factory for generating math problems using the Strategy Pattern.
+    
+    Supports multiple MathWorlds (Counting, Addition, Subtraction).
+    Maintains backwards compatibility with legacy level-based generation.
+    """
+    
+    def __init__(self, default_world: MathWorld = MathWorld.COUNTING):
+        """
+        Initialize factory with a default world.
+        
+        Args:
+            default_world: Default MathWorld for legacy generate() calls
+        """
+        self._default_world = default_world
+        self._current_world = default_world
+        self._strategy_cache: dict[MathWorld, ProblemStrategy] = {}
+    
+    def set_world(self, world: MathWorld) -> None:
+        """
+        Set the current world for problem generation.
+        
+        Args:
+            world: The MathWorld to use for subsequent generate() calls
+        """
+        self._current_world = world
+    
+    @property
+    def current_world(self) -> MathWorld:
+        """Get the currently active MathWorld."""
+        return self._current_world
+    
+    def _get_strategy(self, world: MathWorld) -> ProblemStrategy:
+        """Get or create strategy for the given world (cached)."""
+        if world not in self._strategy_cache:
+            self._strategy_cache[world] = StrategyRegistry.get_strategy(world)
+        return self._strategy_cache[world]
+    
+    def generate(self, level_idx: int, world: Optional[MathWorld] = None) -> dict:
+        """
+        Generate a math problem for the given level.
+        
+        Args:
+            level_idx: 0-based level index
+            world: Optional MathWorld override (uses current_world if None)
+            
+        Returns:
+            Dictionary with problem data (backwards compatible format)
+        """
+        target_world = world or self._current_world
+        strategy = self._get_strategy(target_world)
+        problem = strategy.generate(level_idx)
+        
+        # Convert to dict for backwards compatibility
+        result = problem.to_dict()
+        
+        # Add legacy 'host' key (alias for host_text)
+        result['host'] = result.get('host_text', result.get('host', ''))
+        
+        return result
+    
+    def generate_problem(self, level_idx: int, world: Optional[MathWorld] = None) -> ProblemData:
+        """
+        Generate a math problem and return the full ProblemData object.
+        
+        Args:
+            level_idx: 0-based level index
+            world: Optional MathWorld override (uses current_world if None)
+            
+        Returns:
+            ProblemData object with full type information
+        """
+        target_world = world or self._current_world
+        strategy = self._get_strategy(target_world)
+        return strategy.generate(level_idx)
     
     @staticmethod
-    def generate(level_idx: int) -> dict:
+    def get_visual_mode(world: MathWorld) -> VisualMode:
         """
-        Generate a counting problem for the given level.
+        Get the default visual mode for a MathWorld.
         
-        Level 0 -> Counts 1-3
-        Level 9 -> Counts 10-20
+        Returns:
+            VisualMode enum value
         """
-        # Linear difficulty scaling
-        max_n = 3 + (level_idx * 2)
-        max_n = min(max_n, 20)  # Cap at 20 for foundation year
-        target = random.randint(1, max_n)
-        item = random.choice(CONCRETE_ITEMS)
-        
-        # Generate distractors (close to target for challenge)
-        options = {target}
-        attempts = 0
-        while len(options) < 3 and attempts < 20:
-            offset = random.choice([-1, 1, -2, 2])
-            distractor = target + offset
-            if distractor > 0 and distractor != target:
-                options.add(distractor)
-            attempts += 1
-        
-        # Ensure we always have 3 options
-        while len(options) < 3:
-            options.add(max(1, target + len(options)))
-        
-        options_list = list(options)
-        random.shuffle(options_list)
-        
-        return {
-            "level": level_idx + 1,
-            "target": target,
-            "options": options_list,
-            "prompt": f"How many {item['name']}?",
-            "emoji": item['emoji'],
-            "item_name": item['name'],  # For VoiceBank category lookup
-            "host": random.choice(HOST_PROMPTS)  # No longer gives away answer!
+        mode_map = {
+            MathWorld.COUNTING: VisualMode.SCATTER,
+            MathWorld.ADDITION: VisualMode.MERGE,
+            MathWorld.SUBTRACTION: VisualMode.TAKE_AWAY,
         }
+        return mode_map.get(world, VisualMode.SCATTER)
