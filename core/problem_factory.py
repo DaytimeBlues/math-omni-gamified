@@ -1,63 +1,73 @@
 """
-Problem Factory - Dynamic Math Problem Generation
+Problem Factory - Strategy-driven problem generation.
 
-Generates counting problems with linear difficulty scaling.
+Cursor Code Quality Fix:
+- Added register_strategy() for dynamic strategy registration (Plugin Packs)
+- Full type hints throughout
 """
 
-import random
-from config import CONCRETE_ITEMS
-
-# Pedagogically appropriate prompts that don't give away the answer
-HOST_PROMPTS = [
-    "How many can you count?",
-    "Let's count together!",
-    "Can you count these?",
-    "Count carefully!",
-    "How many do you see?",
-    "Take your time and count!",
-]
-
+from __future__ import annotations
+from core.problems import (
+    AdditionStrategy,
+    CountingStrategy,
+    ProblemData,
+    ProblemStrategy,
+    SubtractionStrategy,
+)
 
 class ProblemFactory:
-    """Generates math problems scaled to level index."""
-    
-    @staticmethod
-    def generate(level_idx: int) -> dict:
-        """
-        Generate a counting problem for the given level.
-        
-        Level 0 -> Counts 1-3
-        Level 9 -> Counts 10-20
-        """
-        # Linear difficulty scaling
-        max_n = 3 + (level_idx * 2)
-        max_n = min(max_n, 20)  # Cap at 20 for foundation year
-        target = random.randint(1, max_n)
-        item = random.choice(CONCRETE_ITEMS)
-        
-        # Generate distractors (close to target for challenge)
-        options = {target}
-        attempts = 0
-        while len(options) < 3 and attempts < 20:
-            offset = random.choice([-1, 1, -2, 2])
-            distractor = target + offset
-            if distractor > 0 and distractor != target:
-                options.add(distractor)
-            attempts += 1
-        
-        # Ensure we always have 3 options
-        while len(options) < 3:
-            options.add(max(1, target + len(options)))
-        
-        options_list = list(options)
-        random.shuffle(options_list)
-        
-        return {
-            "level": level_idx + 1,
-            "target": target,
-            "options": options_list,
-            "prompt": f"How many {item['name']}?",
-            "emoji": item['emoji'],
-            "item_name": item['name'],  # For VoiceBank category lookup
-            "host": random.choice(HOST_PROMPTS)  # No longer gives away answer!
+    """Context class that selects the appropriate problem strategy."""
+
+    def __init__(self):
+        self._strategies: dict[str, ProblemStrategy] = {
+            "counting": CountingStrategy(),
+            "addition": AdditionStrategy(),
+            "subtraction": SubtractionStrategy(),
         }
+        self._current_mode: str = "counting"
+
+    @property
+    def current_mode(self) -> str:
+        return self._current_mode
+
+    def set_mode(self, mode: str) -> None:
+        if mode not in self._strategies:
+            raise ValueError(f"Unknown mode: {mode}")
+        self._current_mode = mode
+
+    def set_profile(self, profile):
+        """Propagate profile to all strategies."""
+        for strategy in self._strategies.values():
+            strategy.set_profile(profile)
+    
+    # Cursor Registry Pattern: Enables future Plugin Packs
+    def register_strategy(self, mode: str, strategy: ProblemStrategy) -> None:
+        """
+        Register a new problem strategy dynamically.
+        
+        Usage for Plugin Packs:
+            factory.register_strategy("fractions", FractionsStrategy())
+        """
+        if not isinstance(strategy, ProblemStrategy):
+            raise TypeError(f"Strategy must be a ProblemStrategy subclass, got {type(strategy)}")
+        self._strategies[mode] = strategy
+
+    def unregister_strategy(self, mode: str) -> bool:
+        """Remove a registered strategy. Returns True if removed."""
+        if mode in ("counting", "addition", "subtraction"):
+            raise ValueError(f"Cannot unregister core strategy: {mode}")
+        return self._strategies.pop(mode, None) is not None
+    
+    @property
+    def available_modes(self) -> list[str]:
+        """List all registered strategy modes."""
+        return list(self._strategies.keys())
+
+    def generate(self, difficulty: int, mode: str | None = None) -> ProblemData:
+        strategy_key = mode or self._current_mode
+        if strategy_key not in self._strategies:
+            raise ValueError(f"Unknown mode: {strategy_key}")
+
+        strategy = self._strategies[strategy_key]
+        return strategy.generate(difficulty)
+

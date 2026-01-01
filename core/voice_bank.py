@@ -67,7 +67,14 @@ class VoiceBank:
                 self._play_done.set_result(True)
     
     def _load_phrases(self):
-        """Load phrase catalog and verify audio files exist."""
+        """
+        Load phrase catalog (paths only, lazy duration).
+        
+        DeepSeek Performance Fix:
+        - Only parse YAML and verify file existence at init
+        - Defer _get_duration() to first playback (lazy)
+        - Reduces startup from O(n) file reads to O(1) YAML parse
+        """
         if not VOICE_BANK_YAML.exists():
             print(f"[VoiceBank] YAML not found: {VOICE_BANK_YAML}")
             logger.warning("Voice bank YAML not found: %s", VOICE_BANK_YAML)
@@ -99,11 +106,11 @@ class VoiceBank:
                 
                 total += 1
                 if audio_path.exists():
-                    duration = self._get_duration(audio_path)
-                    self._phrases[category].append((text, audio_path, duration))
+                    # LAZY: Store None for duration, calculate on first use
+                    self._phrases[category].append((text, audio_path, None))
                     available += 1
         
-        print(f"[VoiceBank] Loaded {available}/{total} phrases")
+        print(f"[VoiceBank] Indexed {available}/{total} phrases (durations lazy)")
 
     def _get_duration(self, audio_path: Path) -> float:
         """Read WAV file duration from header."""
@@ -175,7 +182,16 @@ class VoiceBank:
         if not self.has_category(category):
             return 0.0
         
-        _, audio_path, duration = random.choice(self._phrases[category])
+        entry = random.choice(self._phrases[category])
+        text, audio_path, duration = entry
+        
+        # Lazy duration calculation (DeepSeek fix)
+        if duration is None:
+            duration = self._get_duration(audio_path)
+            # Update cache in-place (tuple is immutable, so we replace)
+            idx = self._phrases[category].index(entry)
+            self._phrases[category][idx] = (text, audio_path, duration)
+        
         self._player.setSource(QUrl.fromLocalFile(str(audio_path)))
         self._player.play()
         return duration
@@ -188,7 +204,13 @@ class VoiceBank:
         if index >= len(self._phrases[category]):
             index = 0
         
-        _, audio_path, duration = self._phrases[category][index]
+        text, audio_path, duration = self._phrases[category][index]
+        
+        # Lazy duration calculation (DeepSeek fix)
+        if duration is None:
+            duration = self._get_duration(audio_path)
+            self._phrases[category][index] = (text, audio_path, duration)
+        
         self._player.setSource(QUrl.fromLocalFile(str(audio_path)))
         self._player.play()
         return duration

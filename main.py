@@ -121,6 +121,10 @@ def main():
     container.register(ProblemFactory, ProblemFactory())
     container.register(RuleBasedHintEngine, RuleBasedHintEngine())
     
+    # Cursor DI Fix: Register VoiceBank for proper dependency injection
+    from core.voice_bank import VoiceBank
+    container.register(VoiceBank, VoiceBank())
+    
     # Init Game Manager with Container
     window = GameManager(container)
     window.show()

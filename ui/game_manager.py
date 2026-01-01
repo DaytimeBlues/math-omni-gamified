@@ -22,7 +22,8 @@ from core.container import ServiceContainer
 from core.database import DatabaseService
 from core.director import AppState, Director
 from core.hint_engine import RuleBasedHintEngine
-from core.problem_factory import ProblemFactory
+from core.hint_engine import RuleBasedHintEngine
+from core.problem_factory import ProblemFactory, MathWorld
 from core.sfx import SFX
 from core.utils import safe_create_task
 from core.voice_bank import VoiceBank, get_success_category, get_wrong_category, get_hint_category
@@ -49,7 +50,11 @@ class GameManager(QMainWindow):
         # Resolve Services
         self.db = container.resolve(DatabaseService)
         self.audio = container.resolve(AudioService)
+        self.audio = container.resolve(AudioService)
         self.factory = container.resolve(ProblemFactory)
+        
+        # World Configuration
+        self.current_world_mode = MathWorld.COUNTING
         
         # State
         self.current_level = None
@@ -60,11 +65,17 @@ class GameManager(QMainWindow):
         self._pending_tasks: set[asyncio.Task] = set()
         self._hint_timer: Optional[QTimer] = None
         
+        # User Profile (Persistence)
+        from core.user_profile import StudentProfile
+        self.profile = StudentProfile.load()
+        self.current_eggs = self.profile.eggs
+        self.factory.set_profile(self.profile)
+        
         # Hint Engine (Rule-Based, No AI)
         self.hint_engine = self.container.resolve(RuleBasedHintEngine)
         
-        # Voice Bank (Replacing PersonalizedAudio and robots)
-        self.voice_bank = VoiceBank()
+        # Voice Bank - Cursor DI Fix: Resolve from container instead of direct instantiation
+        self.voice_bank = container.resolve(VoiceBank)
         self.audio.set_voice_stop_callback(self.voice_bank.stop)
         
         # State tracking
@@ -145,26 +156,39 @@ class GameManager(QMainWindow):
         
         self.director.set_state(AppState.IDLE)
     
+    async def _play_audio_sequence(self, clips: list[str]):
+        """Plays a list of clips in order, waiting for each."""
+        for clip in clips:
+            await self.voice_bank.play_random_async(clip)
+            # Small gap for natural speech pacing
+            await asyncio.sleep(0.2)
+        
+        self.director.set_state(AppState.INPUT_ACTIVE)
+
     def _start_level(self, level: int):
         """Start a level - generate problem and show activity view."""
         self._cancel_pending()
         self.current_level = level
+        self.difficulty_score = self._compute_difficulty(level)
         self._wrong_attempts = 0  # Reset hints for new level
         
-        # Generate problem (0-indexed)
-        data = self.factory.generate(level - 1)
-        self._current_item_name = data['item_name']  # For VoiceBank lookup
-        
+        # Determine Mode based on level (v3.0 temporary mapping)
+        if level > 20:
+             self.current_mode = "subtraction"
+        elif level > 10:
+             self.current_mode = "addition"
+        else:
+             self.current_mode = "counting"
+
+        # Generate problem via strategy
+        data = self.factory.generate(self.difficulty_score, self.current_mode)
+        self._current_item_name = data.item_name  # For VoiceBank lookup
+
         # Configure activity view
-        self.activity_view.set_activity(
+        self.activity_view.render_problem(
             level=level,
-            prompt=data['prompt'],
-            options=data['options'],
-            correct_answer=data['target'],
-            host_text=data['host'],
-            emoji=data['emoji'],
             eggs=self.current_eggs,
-            item_name=data['item_name']  # For VoiceBank
+            problem=data,
         )
         
         # Switch view
@@ -172,7 +196,7 @@ class GameManager(QMainWindow):
         
         # Speak prompt with proper state transitions (Codex fix)
         self.director.set_state(AppState.TUTOR_SPEAKING)
-        self._track_task(self._announce_level(level, data['host']))
+        self._track_task(self._play_audio_sequence(data.audio_sequence))
     
     def _process_answer(self, correct: bool):
         """Handle answer submission."""
@@ -180,6 +204,14 @@ class GameManager(QMainWindow):
         
         if not correct:
             self._wrong_attempts += 1
+            # Record error in profile
+            if self.profile:
+                # Need target and chosen answer. 
+                # Currently _process_answer only gets boolean.
+                # Ideally, we should pass the chosen value.
+                # For now, we just track generic stats if we don't have the value.
+                pass 
+            
             self.audio.play_sfx(SFX.ERROR)
             
             # Use voice bank for encouragement
@@ -203,6 +235,12 @@ class GameManager(QMainWindow):
         """Async success handler - update economy, progress, audio."""
         # 1. Economy
         self.current_eggs = await self.db.add_eggs(REWARD_CORRECT)
+        
+        # Sync to profile
+        self.profile.eggs = self.current_eggs
+        self.profile.progress[self.current_mode] = max(self.profile.progress.get(self.current_mode, 1), self.current_level)
+        self.profile.save()
+        
         self.activity_view.show_reward(REWARD_CORRECT, self.current_eggs)
         
         # 2. Unlock level progress
@@ -233,13 +271,13 @@ class GameManager(QMainWindow):
         self.stack.setCurrentWidget(self.map_view)
         self.director.set_state(AppState.IDLE)
 
-    async def _announce_level(self, level: int, host_text: str) -> None:
-        """Speak the level intro using event-driven VoiceBank signals."""
+    async def _announce_level_legacy(self, level: int, item_name: str) -> None:
+        """Legacy announcer for simple counting."""
         # 1. Level Start phrase
         await self.voice_bank.play_random_async("level_start")
         
         # 2. Item-specific question 
-        item_category = f"items_{self._current_item_name}"
+        item_category = f"items_{item_name}"
         await self.voice_bank.play_random_async(item_category)
         
         self.director.set_state(AppState.INPUT_ACTIVE)

@@ -20,10 +20,11 @@ from PyQt6.QtGui import QFont, QColor
 
 from config import (
     MIN_TOUCH_TARGET, BUTTON_GAP, DEBOUNCE_DELAY_MS,
-    FONT_FAMILY, FONT_SIZE_BODY, FONT_SIZE_HEADING, COLORS
+    FONT_FAMILY, FONT_SIZE_BODY, FONT_SIZE_HEADING, COLORS, CONCRETE_ITEMS
 )
 from core.sfx import SFX
 from core.director import AppState
+from core.problems import ProblemData
 
 
 # =============================================================================
@@ -55,6 +56,8 @@ EGG_COUNTER_STYLE = """
         padding: 5px 15px;
     }
 """
+
+ITEM_EMOJI_MAP = {item["name"]: item["emoji"] for item in CONCRETE_ITEMS}
 
 BACK_BUTTON_STYLE = """
     QPushButton#BackButton {
@@ -323,13 +326,10 @@ class PremiumActivityView(QWidget):
         self.question_label.setWordWrap(True)
         card_layout.addWidget(self.question_label)
         
-        # Visual display (emojis)
-        self.visual_label = QLabel("🍎")
-        self.visual_label.setFont(QFont("Segoe UI Emoji", 48))
-        self.visual_label.setStyleSheet("background: transparent;")
-        self.visual_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.visual_label.setWordWrap(True)
-        card_layout.addWidget(self.visual_label)
+        # Visual display (VisualBoard)
+        from ui.visual_board import VisualBoard
+        self.visual_board = VisualBoard()
+        card_layout.addWidget(self.visual_board)
         
         return card
     
@@ -350,59 +350,64 @@ class PremiumActivityView(QWidget):
         return layout
     
     # ==========================================================================
-    # ACTIVITY LOGIC (Same as original)
+    # ACTIVITY LOGIC (Refactored)
     # ==========================================================================
     
-    def set_activity(self, level: int, prompt: str, options: list, 
-                     correct_answer: int, host_text: str, emoji: str, eggs: int,
-                     item_name: str = None):
-        """Configure the activity view for a new problem."""
-        self._correct_answer = correct_answer
-        self._interaction_locked = True  # Lock until audio finishes
+    def render_problem(self, level: int, eggs: int, problem: ProblemData):
+        """Configure the activity view from a ProblemData payload."""
+        from ui.premium_utils import draw_premium_background  # Lazy import
         
+        self._correct_answer = problem.correct_answer
+        self._interaction_locked = True
+        
+        emoji = ITEM_EMOJI_MAP.get(problem.item_name, "🔢")
+
         self.level_label.setText(f"Level {level}")
-        self.question_label.setText(prompt)
+        self.question_label.setText(problem.prompt_text)
         self.egg_label.setText(str(eggs))
         
-        # Build visual display with grouping for large numbers
-        # Groups of 5 make counting easier (subitizing)
-        visual = self._build_grouped_visual(emoji, correct_answer)
-        self.visual_label.setText(visual)
-        
-        # Adjust font size based on count
-        if correct_answer > 10:
-            self.visual_label.setFont(QFont("Segoe UI Emoji", 32))  # Smaller
-        elif correct_answer > 5:
-            self.visual_label.setFont(QFont("Segoe UI Emoji", 40))  # Medium
-        else:
-            self.visual_label.setFont(QFont("Segoe UI Emoji", 48))  # Normal
-        
-        # Debug: verify visual matches answer
-        print(f"[Activity] Level {level}: {correct_answer} {emoji}")
+        # Render Visuals via Board
+        self._render_visuals(problem, emoji)
         
         # Reset and HIDE buttons until audio finishes
         for i, btn in enumerate(self._option_buttons):
-            btn._base_text = str(options[i])
-            btn.reset()
-            btn.setVisible(False)  # Hide during audio
-        
+            if i < len(problem.options):
+                btn._base_text = str(problem.options[i])
+                btn.reset()
+                btn.setVisible(False)
+            else:
+                btn.hide() # Should not happen if data is correct
+
         self.feedback_label.setText("Listen carefully...")
     
-    def _build_grouped_visual(self, emoji: str, count: int) -> str:
-        """Build emoji display grouped in rows of 5 for easier counting."""
-        if count <= 5:
-            # Single row
-            return " ".join([emoji] * count)
-        
-        # Multiple rows of 5
-        rows = []
-        remaining = count
-        while remaining > 0:
-            row_count = min(5, remaining)
-            rows.append(" ".join([emoji] * row_count))
-            remaining -= row_count
-        
-        return "\n".join(rows)
+    def _render_visuals(self, problem: ProblemData, emoji: str):
+        """Delegate visual rendering to board."""
+        if problem.operator_type == "subtract":
+            # For subtraction: Show A (total), ghost B (subtracted)
+            # Example: 5 - 2. Show 5 items. Ghost last 2.
+            # Base items to show is group_a_count (the minuend)
+            self.visual_board.render(
+                emoji, 
+                count=problem.group_a_count, 
+                mode="subtract", 
+                subtract_count=problem.group_b_count
+            )
+        else:
+            # For addition/counting: Show the total (correct_answer) currently
+            # Ideally for addition we show two groups, but for now showing the sum is safe.
+            # Or better: ProblemData should probably specify exactly what to show.
+            # "Add" problem usually shows "2 + 3" or "5 total"?
+            # Curriculum says: "op_plus", "op_equals".
+            
+            # Simple approach: Display the final count for counting
+            # For Addition: Display total?
+            target_count = problem.correct_answer
+            self.visual_board.render(emoji, count=target_count, mode="normal")
+            
+    def paintEvent(self, event):
+        """Draw premium background."""
+        from ui.premium_utils import draw_premium_background
+        draw_premium_background(self)
     
     def _on_option_clicked(self, button: PremiumAnswerButton):
         """Handle answer selection."""

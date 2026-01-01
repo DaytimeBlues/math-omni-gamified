@@ -37,6 +37,13 @@ HINT_LIBRARY: Dict[str, List[Hint]] = {
         Hint("visual", "pulse_correct_area", ""),
         Hint("audio", "count_all_objects", "Count all the objects together."),
         Hint("visual", "group_numbers", ""),
+        Hint("audio", "combine_groups", "Put the groups together, then count!"),
+    ],
+    "subtraction": [
+        Hint("visual", "highlight_removal", ""),
+        Hint("audio", "count_whats_left", "Count how many are left after some go away."),
+        Hint("visual", "animate_take_away", ""),
+        Hint("audio", "watch_disappear", "Watch the items disappear, then count what's left."),
     ],
     # Default fallback
     "generic": [
