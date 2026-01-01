@@ -2,7 +2,7 @@
 Voice Bank - Pre-recorded TTS Phrase Management
 
 Loads and plays pre-generated Gemini 2.5 Pro TTS audio clips.
-Falls back to edge-tts for phrases not in the bank.
+
 
 Categories:
 - welcome, success_*, wrong_*, hints_*, instructions
