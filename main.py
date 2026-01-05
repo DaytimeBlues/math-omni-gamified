@@ -6,12 +6,10 @@ Target: 5-year-old children (Foundation Year)
 Core Tech: PyQt6 + qasync for non-blocking TTS
 
 FIXES APPLIED (AI Review):
-- Removed unused asyncSlot import (ChatGPT)
-- Added error handling with QMessageBox (Z.ai, ChatGPT)
-- Added lifecycle cleanup on quit (ChatGPT)
-- Replaced ensure_future with create_task (ChatGPT)
-- Public start_application method (Z.ai)
-- Dynamic stylesheet using config values (Z.ai, ChatGPT)
+- Safe logging config fallback (ChatGPT 5.2)
+- Child-safe "Oops" dialog with retry (ChatGPT 5.2)
+- Global async exception handler (ChatGPT 5.2)
+- Window disabled during init (ChatGPT 5.2)
 - High DPI awareness (Z.ai)
 """
 
@@ -20,17 +18,17 @@ import asyncio
 import logging
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
+from typing import Optional, Callable
 
 from PyQt6.QtWidgets import QApplication, QMessageBox
 from PyQt6.QtCore import QTimer, Qt
 from qasync import QEventLoop
 
-from config import FONT_FAMILY, COLORS, MIN_TOUCH_TARGET
+from config import FONT_FAMILY
 from core.database import DatabaseService
 from core.audio_service import AudioService
 from core.hint_engine import RuleBasedHintEngine
 from core.problem_factory import ProblemFactory
-from core.sfx import SFX
 from ui.game_manager import GameManager
 from core.utils import safe_create_task
 from core.container import ServiceContainer
@@ -39,6 +37,10 @@ from ui.premium_ui import MASTER_STYLESHEET
 
 logger = logging.getLogger(__name__)
 
+
+# =============================================================================
+# LOGGING SETUP (Finding 1: Safe Fallback)
+# =============================================================================
 
 def configure_logging() -> Path:
     """Configure rotating file logging (1MB max, 5 backups)."""
@@ -69,13 +71,53 @@ def configure_logging() -> Path:
     return log_file
 
 
+def safe_configure_logging() -> Optional[Path]:
+    """ChatGPT 5.2 Fix: Safe logging setup with fallback."""
+    try:
+        return configure_logging()
+    except Exception:
+        # Fallback: console-only logging, keep app alive
+        logging.basicConfig(level=logging.INFO)
+        logging.getLogger(__name__).exception("Logging init failed; using basicConfig fallback")
+        return None
+
+
+# =============================================================================
+# CHILD-SAFE ERROR DIALOGS (Finding 2)
+# =============================================================================
+
+def show_oops(parent, text: str, *, retry_coro: Optional[Callable] = None):
+    """
+    ChatGPT 5.2 Fix: Child-safe error dialog with optional retry.
+    
+    Uses friendly "Oops!" language instead of technical error messages.
+    """
+    box = QMessageBox(parent)
+    box.setIcon(QMessageBox.Icon.Warning)
+    box.setWindowTitle("Oops!")
+    box.setText(text)
+
+    retry_btn = None
+    if retry_coro is not None:
+        retry_btn = box.addButton("Try again", QMessageBox.ButtonRole.AcceptRole)
+    box.addButton("Close", QMessageBox.ButtonRole.RejectRole)
+
+    box.exec()
+
+    if retry_btn is not None and box.clickedButton() == retry_btn:
+        safe_create_task(retry_coro())
+    else:
+        parent.close()
+
+
 def create_stylesheet() -> str:
-    """
-    Generate stylesheet dynamically from config values.
-    Now uses MASTER_STYLESHEET from premium_ui for Omni Kids design.
-    """
+    """Uses MASTER_STYLESHEET from premium_ui for Omni Kids design."""
     return MASTER_STYLESHEET
 
+
+# =============================================================================
+# MAIN ENTRY POINT
+# =============================================================================
 
 def main():
     """
@@ -86,20 +128,18 @@ def main():
     - UI must never freeze while audio generates
     - Kids will rage-tap if app appears frozen
     """
-    # Initialize logging first
-    log_file = configure_logging()
-    logger.info("Math Omni starting up...")
+    # ChatGPT 5.2 Fix: Safe logging with fallback
+    log_file = safe_configure_logging()
+    logger.info("Math Omni starting up... (log_file=%s)", log_file)
     
-    # FIX: Z.ai - High DPI awareness
+    # High DPI awareness
     app = QApplication(sys.argv)
     app.setAttribute(Qt.ApplicationAttribute.AA_DontCreateNativeWidgetSiblings)
     
-    # FIX: LLM Review - Force Fusion style for predictable QSS
-    # Native Windows style fights stylesheets, Fusion is consistent
+    # Force Fusion style for predictable QSS
     app.setStyle("Fusion")
     
-    # FIX: LLM Review - Set app font explicitly (no Comic Sans fallback!)
-    # If Lexend isn't installed, falls back to Segoe UI (neutral)
+    # Set app font explicitly
     from PyQt6.QtGui import QFont
     app.setFont(QFont(FONT_FAMILY, 12))
     
@@ -107,11 +147,10 @@ def main():
     loop = QEventLoop(app)
     asyncio.set_event_loop(loop)
     
-    # FIX: Apply dynamic stylesheet from config
+    # Apply dynamic stylesheet
     app.setStyleSheet(create_stylesheet())
     
-    # --- Phase 2: Service Container ---
-    # Create services instances
+    # --- Service Container ---
     db_service = DatabaseService()
     audio_service = AudioService()
     
@@ -121,43 +160,77 @@ def main():
     container.register(ProblemFactory, ProblemFactory())
     container.register(RuleBasedHintEngine, RuleBasedHintEngine())
     
-    # Cursor DI Fix: Register VoiceBank for proper dependency injection
+    # Register VoiceBank for proper DI
     from core.voice_bank import VoiceBank
     container.register(VoiceBank, VoiceBank())
     
     # Init Game Manager with Container
     window = GameManager(container)
+    
+    # ChatGPT 5.2 Fix: Disable window during init to prevent premature taps
+    window.setEnabled(False)
     window.show()
     
-    # FIX: Z.ai - Use public method instead of protected _welcome
+    # ChatGPT 5.2 Fix: Track if we've shown an error (prevent multiple dialogs)
+    error_shown = {"flag": False}
+    
+    def child_safe_fatal(msg: str):
+        """Show a single child-safe error message."""
+        if error_shown["flag"]:
+            return
+        error_shown["flag"] = True
+        show_oops(window, msg)
+    
+    # ChatGPT 5.2 Fix: Global async exception handler (Finding 3)
+    def handle_async_exception(loop_ref, context):
+        exc = context.get("exception")
+        logger.error("Async exception: %s", context.get("message"), exc_info=exc)
+        QTimer.singleShot(0, lambda: child_safe_fatal("Oops! Something went wrong."))
+    
+    loop.set_exception_handler(handle_async_exception)
+    
+    # ChatGPT 5.2 Fix: Global Python excepthook (Finding 3)
+    def excepthook(exc_type, exc, tb):
+        logger.critical("Unhandled exception", exc_info=(exc_type, exc, tb))
+        QTimer.singleShot(0, lambda: child_safe_fatal("Oops! Something went wrong."))
+    
+    sys.excepthook = excepthook
+    
+    # ChatGPT 5.2 Fix: Async init with retry capability (Finding 2)
     async def init_async():
         try:
             await db_service.initialize()
             await window.start_application()
-        except Exception as e:
-            # FIX: Z.ai, ChatGPT - Error handling with user dialog
-            QMessageBox.critical(
-                window, 
-                "Startup Error",
-                f"Failed to initialize: {e}\n\nThe app may not work correctly."
-            )
-            print(f"[main] Initialization error: {e}")
+            window.setEnabled(True)  # Enable interaction after successful init
+        except Exception:
+            logger.exception("Startup initialization failed")
+            window.setEnabled(False)
+            QTimer.singleShot(0, lambda: show_oops(
+                window,
+                "Something went wrong. You can try again.",
+                retry_coro=init_async
+            ))
     
-    # FIX: ChatGPT - Replace ensure_future with create_task
-    # Use singleShot(0) instead of magic 100ms delay
-    # FIX: Z.ai - Use safe_create_task to log exceptions
     QTimer.singleShot(0, lambda: safe_create_task(init_async()))
     
-    # FIX: ChatGPT - Lifecycle cleanup on quit
+    # LLM Council Fix: Lifecycle cleanup on quit
+    # CRITICAL: Use run_until_complete instead of safe_create_task
+    # to ensure DB closes before event loop terminates.
     async def cleanup():
         try:
             await db_service.close()
-            await audio_service.cleanup()
-        except Exception as e:
-            print(f"[main] Cleanup error: {e}")
+            audio_service.cleanup()
+            logger.info("Cleanup completed successfully")
+        except Exception:
+            logger.exception("Cleanup failed")
     
     def on_about_to_quit():
-        safe_create_task(cleanup())
+        # LLM Council Fix: Synchronous wait to prevent race condition
+        try:
+            loop.run_until_complete(cleanup())
+        except RuntimeError:
+            # Loop already closed - best effort cleanup
+            logger.warning("Event loop closed before cleanup could complete")
     
     app.aboutToQuit.connect(on_about_to_quit)
 
@@ -171,7 +244,6 @@ if __name__ == "__main__":
         main()
     except KeyboardInterrupt:
         pass
-    except Exception as e:
-        # FIX: Z.ai, ChatGPT - Catch all exceptions
-        print(f"[FATAL] Unhandled exception: {e}")
+    except Exception:
+        logger.exception("Unhandled fatal error")
         sys.exit(1)

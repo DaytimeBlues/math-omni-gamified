@@ -76,7 +76,6 @@ class VoiceBank:
         - Reduces startup from O(n) file reads to O(1) YAML parse
         """
         if not VOICE_BANK_YAML.exists():
-            print(f"[VoiceBank] YAML not found: {VOICE_BANK_YAML}")
             logger.warning("Voice bank YAML not found: %s", VOICE_BANK_YAML)
             return
         
@@ -85,10 +84,10 @@ class VoiceBank:
                 data = yaml.safe_load(f) or {}
             
             if not isinstance(data, dict):
-                print(f"[VoiceBank] YAML is not a mapping: {VOICE_BANK_YAML}")
+                logger.warning("YAML is not a mapping: %s", VOICE_BANK_YAML)
                 return
         except Exception as e:
-            print(f"[VoiceBank] Failed to load YAML: {e}")
+            logger.warning("Failed to load YAML: %s", e)
             return
         
         total = 0
@@ -110,7 +109,7 @@ class VoiceBank:
                     self._phrases[category].append((text, audio_path, None))
                     available += 1
         
-        print(f"[VoiceBank] Indexed {available}/{total} phrases (durations lazy)")
+        logger.info("VoiceBank indexed %d/%d phrases (durations lazy)", available, total)
 
     def _get_duration(self, audio_path: Path) -> float:
         """Read WAV file duration from header."""

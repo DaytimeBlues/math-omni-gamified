@@ -8,10 +8,14 @@ request from parents. This simple JSON file provides that.
 """
 
 import json
+import logging
 import os
 from datetime import datetime
 from typing import Dict, List, Optional
 from dataclasses import dataclass, asdict
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -68,9 +72,9 @@ class ProgressTracker:
             if os.path.exists(self.save_path):
                 with open(self.save_path, 'r') as f:
                     self.history = json.load(f)
-                print(f"[ProgressTracker] Loaded {len(self.history)} sessions")
+                logger.info("Loaded %d progress sessions", len(self.history))
         except Exception as e:
-            print(f"[ProgressTracker] Could not load progress: {e}")
+            logger.warning("Could not load progress: %s", e)
             self.history = []
     
     def _save(self):
@@ -79,7 +83,7 @@ class ProgressTracker:
             with open(self.save_path, 'w') as f:
                 json.dump(self.history, f, indent=2)
         except Exception as e:
-            print(f"[ProgressTracker] Could not save progress: {e}")
+            logger.warning("Could not save progress: %s", e)
     
     def start_session(self, module: str = "counting"):
         """
@@ -125,7 +129,13 @@ class ProgressTracker:
         self.history.append(asdict(record))
         self._save()
         
-        print(f"[ProgressTracker] Session saved: {self._problems_correct}/{self._problems_attempted} correct")
+        logger.info(
+            "Session saved: %d/%d correct (module=%s, minutes=%.1f)",
+            self._problems_correct,
+            self._problems_attempted,
+            self._current_module,
+            record.duration_minutes,
+        )
     
     def get_stats(self) -> Dict:
         """

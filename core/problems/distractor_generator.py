@@ -205,12 +205,19 @@ class SubtractionDistractorGenerator:
             if c >= 0 and c != target and c not in distractors:
                 distractors.add(c)
         
-        # 6. Fill to required count with random valid values
+        # 6. Fill to required count with weighted diversity (DeepSeek/Codex Merge)
         attempts = 0
-        max_val = max(group_a + group_b, 10)
+        max_val = max(group_a + group_b, 10, target + 5)
+        
         while len(distractors) < 2 and attempts < 50:
             candidate = self._rng.randint(0, max_val)
-            if candidate != target and candidate not in distractors:
+            
+            # Spacing Constraint (DeepSeek Refined: Distance >= 2 from target)
+            if abs(candidate - target) < 2:
+                attempts += 1
+                continue
+                
+            if candidate not in distractors:
                 distractors.add(candidate)
             attempts += 1
         

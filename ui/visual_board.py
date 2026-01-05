@@ -166,14 +166,16 @@ class VisualBoard(QWidget):
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setMinimumHeight(150) # Ensure it has some presence
 
-    def render(self, emoji: str, count: int, mode: str="normal", subtract_count: int=0):
+    def render(self, emoji: str, count: int, mode: str="normal", subtract_count: int=0, animate_crossout: bool=True):
         """
         Render `count` items.
         mode="subtract": The last `subtract_count` items are ghosted.
+        Returns the list of items that were ghosted (if any).
         """
         print(f"[VisualBoard] RENDER: emoji={emoji} count={count} mode={mode} sub={subtract_count}")
         
         self._clear()
+        leaver_widgets = []
         
         # Determine strict grid size
         # We want to center the grid content. 
@@ -215,7 +217,11 @@ class VisualBoard(QWidget):
                     is_ghost = False
                     
                 if is_ghost:
-                     item.set_ghost_mode(True, animate=False)
+                    leaver_widgets.append(item)
+                    if not animate_crossout:
+                        item.set_ghost_mode(True, animate=False)
+        
+        return leaver_widgets
 
     def _clear(self):
         """Remove all items from layout."""

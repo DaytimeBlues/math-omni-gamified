@@ -67,6 +67,21 @@ class StudentProfile:
         if len(self.errors[problem_type]) > 100:
             self.errors[problem_type] = self.errors[problem_type][-100:]
 
+    @property
+    def error_history(self) -> List[dict]:
+        """Flattens errors dict into a single list of dicts for reporting."""
+        history = []
+        for mode, records in self.errors.items():
+            for r in records:
+                history.append({
+                    'target': r.target,
+                    'chosen': r.chosen,
+                    'timestamp': r.timestamp,
+                    'mode': mode
+                })
+        # Sort by timestamp descending
+        return sorted(history, key=lambda x: x['timestamp'], reverse=True)
+
     def get_frequent_errors(self, problem_type: str, limit: int = 3) -> List[int]:
         """Return the most frequent wrong answers (for this type)."""
         if problem_type not in self.errors:

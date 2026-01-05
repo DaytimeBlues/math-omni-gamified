@@ -1,10 +1,10 @@
-# Math Omni v2 🥚
+# Year 1 Math App 🥚
 
-A gamified math learning platform for young children (ages 4-6), inspired by Reading Eggs/Mathseeds.
+A gamified math learning platform for Year 1 children (ages 5-6), aligned with Australian Curriculum (ACARA v9.0).
 
 ## Features
 
-- 🎮 **Tap-based gameplay** - Large 96px touch targets for small hands
+- 🎮 **Tap-based gameplay** - Large 80px+ touch targets for small hands
 - 🧠 **Adaptive difficulty** - Progressive scaling from counting 1-3 to operations up to 20
 - 🥚 **Egg economy** - Earn eggs for correct answers (persists via SQLite)
 - 🔊 **Offline Voice Prompts** - Pre-recorded voice bank (no internet required)
@@ -20,8 +20,8 @@ A gamified math learning platform for young children (ages 4-6), inspired by Rea
 ## Installation
 
 ```bash
-git clone https://github.com/DaytimeBlues/math-omni-gamified.git
-cd math-omni-gamified
+git clone https://github.com/DaytimeBlues/Year_1_Math_app.git
+cd Year_1_Math_app
 python -m venv venv
 .\venv\Scripts\activate
 pip install -r requirements.txt
@@ -37,10 +37,6 @@ DatabaseService + AudioService + ProblemFactory
     ↓
 VoiceBank (offline audio) + Director (state machine)
 ```
-
-## Screenshots
-
-<!-- TODO: Add screenshots of the application -->
 
 ## License
 

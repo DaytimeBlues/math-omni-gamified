@@ -5,13 +5,22 @@ Uses aiosqlite for non-blocking database operations.
 
 FIXES APPLIED (AI Review):
 - Added close() method for lifecycle management (ChatGPT)
+- Added busy_timeout and retry logic for locked database (ChatGPT 5.2)
+- Added write lock to serialize concurrent writes (ChatGPT 5.2)
 """
 
+import asyncio
+import logging
+import sqlite3
+from typing import Optional, Callable, TypeVar
 import aiosqlite
 import os
-from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 DB_PATH = os.path.join("data", "math_omni.db")
+
+T = TypeVar('T')
 
 
 class DatabaseService:
@@ -20,29 +29,50 @@ class DatabaseService:
     def __init__(self):
         self.db_path = DB_PATH
         self._connection: Optional[aiosqlite.Connection] = None
+        self._write_lock = asyncio.Lock()  # ChatGPT 5.2 Fix: Serialize writes
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
 
     async def _ensure_connected(self) -> aiosqlite.Connection:
         """
-        Ensure we have a persistent connection.
+        Ensure we have a persistent connection with proper pragmas.
 
-        Performance note:
-        The old implementation opened a new SQLite connection per query, which
-        adds measurable latency on spinning disks / slow filesystems and causes
-        unnecessary OS-level churn. A single long-lived connection is faster
-        and plays nicely with the app's lifecycle-managed `close()`.
+        ChatGPT 5.2 Fix: Added busy_timeout to handle locked database.
         """
         if self._connection is not None:
             return self._connection
 
-        conn = await aiosqlite.connect(self.db_path)
-        # Pragmas: safe defaults for a local single-user app.
-        # WAL improves concurrent read/write patterns; NORMAL is fine for games.
+        conn = await aiosqlite.connect(self.db_path, timeout=5.0)
+        # ChatGPT 5.2 Fix: Wait up to 5s for locks instead of failing immediately
+        await conn.execute("PRAGMA busy_timeout=5000;")
         await conn.execute("PRAGMA journal_mode=WAL;")
         await conn.execute("PRAGMA synchronous=NORMAL;")
         await conn.execute("PRAGMA foreign_keys=ON;")
         self._connection = conn
         return conn
+
+    async def _retry_locked(self, fn: Callable, *, retries: int = 3, base_delay: float = 0.2, timeout: float = 10.0) -> T:
+        """
+        ChatGPT 5.2 Fix: Retry logic for database locked/busy errors.
+        z.ai Fix: Added timeout to prevent hanging forever.
+        
+        Handles antivirus scans, backup sync, or indexing touching the DB file.
+        """
+        for i in range(retries):
+            try:
+                # z.ai Fix: Wrap in timeout to prevent infinite hang
+                return await asyncio.wait_for(fn(), timeout=timeout)
+            except asyncio.TimeoutError:
+                logger.error("Database operation timed out after %.1fs", timeout)
+                raise
+            except sqlite3.OperationalError as e:
+                msg = str(e).lower()
+                if "locked" not in msg and "busy" not in msg:
+                    raise
+                logger.warning("Database locked, retrying in %.1fs (attempt %d/%d)", 
+                               base_delay * (2 ** i), i + 1, retries)
+                await asyncio.sleep(base_delay * (2 ** i))
+        # Last attempt (let it raise so caller can show "Oops" once)
+        return await asyncio.wait_for(fn(), timeout=timeout)
 
     async def initialize(self):
         """Create tables if they don't exist."""
@@ -84,28 +114,53 @@ class DatabaseService:
         return row[0] if row else 0
 
     async def add_eggs(self, amount: int) -> int:
-        """Add eggs and return new total."""
+        """
+        Add eggs and return new total.
+        
+        ChatGPT 5.2 Fix: Serialized with write lock and retry logic.
+        """
         db = await self._ensure_connected()
-        await db.execute("UPDATE economy SET balance = balance + ? WHERE id=1", (amount,))
+        
+        async with self._write_lock:
+            async def op():
+                # Ensure wallet row exists even if DB file was replaced/corrupted
+                await db.execute("INSERT OR IGNORE INTO economy (id, balance) VALUES (1, 0)")
+                await db.execute("UPDATE economy SET balance = balance + ? WHERE id=1", (amount,))
+                cursor = await db.execute("SELECT balance FROM economy WHERE id=1")
+                try:
+                    row = await cursor.fetchone()
+                finally:
+                    await cursor.close()
+                await db.commit()
+                return row[0] if row else 0
 
-        # Avoid a second connection/query round-trip by reading back on the same connection.
-        cursor = await db.execute("SELECT balance FROM economy WHERE id=1")
-        try:
-            row = await cursor.fetchone()
-        finally:
-            await cursor.close()
-
-        await db.commit()
-        return row[0] if row else 0
+            try:
+                return await self._retry_locked(op)
+            except Exception:
+                # Child-safe: don't crash callers; return a safe default and log
+                logger.exception("add_eggs failed")
+                return 0
 
     async def unlock_level(self, level_id: int):
-        """Mark a level as completed."""
+        """
+        Mark a level as completed.
+        
+        ChatGPT 5.2 Fix: Serialized with write lock.
+        """
         db = await self._ensure_connected()
-        await db.execute("""
-            INSERT OR REPLACE INTO progress (level_id, completed) 
-            VALUES (?, 1)
-        """, (level_id,))
-        await db.commit()
+        
+        async with self._write_lock:
+            async def op():
+                await db.execute("""
+                    INSERT OR REPLACE INTO progress (level_id, completed) 
+                    VALUES (?, 1)
+                """, (level_id,))
+                await db.commit()
+            
+            try:
+                await self._retry_locked(op)
+            except Exception:
+                logger.exception("unlock_level failed for level %d", level_id)
     
     async def get_unlocked_level(self) -> int:
         """Returns the maximum unlocked level ID + 1 (next available)."""
@@ -120,10 +175,7 @@ class DatabaseService:
         return (row[0] + 1) if row and row[0] else 1
     
     async def close(self) -> None:
-        """
-        Close database connection.
-        FIX: ChatGPT - Lifecycle management for proper shutdown.
-        """
+        """Close database connection."""
         if self._connection is None:
             return
         try:

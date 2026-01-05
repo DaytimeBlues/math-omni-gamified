@@ -15,7 +15,10 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QGraphicsDropShadowEffect, QFrame, QSizePolicy
 )
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QPropertyAnimation, QEasingCurve
+from PyQt6.QtCore import (
+    Qt, QTimer, pyqtSignal, QPropertyAnimation, 
+    QEasingCurve, QParallelAnimationGroup, QPoint, QRect
+)
 from PyQt6.QtGui import QFont, QColor
 
 from config import (
@@ -389,9 +392,15 @@ class PremiumActivityView(QWidget):
         self.level_label.setText(f"Level {level}")
         self.question_label.setText(problem.prompt_text)
         self.egg_label.setText(str(eggs))
+        self._leavers = [] # Track items to animate
         
         # Render Visuals via Board
         self._render_visuals(problem, emoji)
+        
+        # Cursor Optimization: Schedule Take-Away Animation
+        if problem.operator_type == "subtract" and self._leavers:
+            # Wait 1.5s (after "Number A... Take away...")
+            QTimer.singleShot(1500, self._play_take_away_animation)
         
         # Reset and HIDE buttons until audio finishes
         for i, btn in enumerate(self._option_buttons):
@@ -409,12 +418,12 @@ class PremiumActivityView(QWidget):
         if problem.operator_type == "subtract":
             # For subtraction: Show A (total), CROSSOUT B (subtracted)
             # Example: 5 - 2. Show 5 items. Cross out last 2.
-            # Base items to show is group_a_count (the minuend)
-            self.visual_board.render(
+            self._leavers = self.visual_board.render(
                 emoji, 
                 count=problem.group_a_count, 
                 mode="crossout", 
-                subtract_count=problem.group_b_count
+                subtract_count=problem.group_b_count,
+                animate_crossout=False # We will trigger the animation manually
             )
         else:
             # For addition/counting: Show the total (correct_answer) currently
@@ -427,6 +436,43 @@ class PremiumActivityView(QWidget):
             # For Addition: Display total?
             target_count = problem.correct_answer
             self.visual_board.render(emoji, count=target_count, mode="normal")
+            self._leavers = []
+
+    def _play_take_away_animation(self):
+        """
+        Premium 'Take Away' Animation (Cursor/Z.ai Merge).
+        Items shrink, fade to ghost mode, and move slightly.
+        """
+        if not self._leavers:
+            return
+            
+        print(f"[PremiumActivityView] ANIM: Playing take-away for {len(self._leavers)} items")
+        anim_group = QParallelAnimationGroup(self)
+        
+        for item in self._leavers:
+            # 1. Scale/Geometry Animation
+            geo_anim = QPropertyAnimation(item, b"geometry")
+            geo_anim.setDuration(800)
+            start_geo = item.geometry()
+            center = start_geo.center()
+            # Shrink to 70% size
+            end_rect = QRect(0, 0, int(start_geo.width()*0.7), int(start_geo.height()*0.7))
+            end_rect.moveCenter(center)
+            
+            geo_anim.setStartValue(start_geo)
+            geo_anim.setEndValue(end_rect)
+            geo_anim.setEasingCurve(QEasingCurve.Type.OutBack)
+            anim_group.addAnimation(geo_anim)
+            
+            # 2. Swap to Ghost Pixmap (coordinated with animation end)
+            # Actually, we can just call set_ghost_mode(True, animate=False) at start
+            # since the shrink is the primary visual cue.
+            item.set_ghost_mode(True, animate=False)
+
+        if self.audio:
+            self.audio.play_sfx(SFX.POP) # Add subtle 'pop' sound for each!
+            
+        anim_group.start()
             
     def paintEvent(self, event):
         """Draw premium background."""

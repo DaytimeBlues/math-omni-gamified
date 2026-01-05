@@ -9,7 +9,7 @@ class CountingStrategy(ProblemStrategy):
     """Generate counting problems with linear difficulty scaling."""
 
     def generate(self, difficulty: int) -> ProblemData:
-        # Input validation: ensure non-negative difficulty
+        # Cursor fix: Input validation - ensure non-negative difficulty
         difficulty = max(0, difficulty)
         max_n = 3 + (difficulty * 2)
         max_n = min(max_n, 20)

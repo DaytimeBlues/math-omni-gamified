@@ -262,3 +262,56 @@ PREMIUM_BG_GRADIENT = """
         stop:1 #F5E6C8
     );
 """
+
+# =============================================================================
+# DOMAIN GRADIENTS (Sidereal Voyager Edition)
+# =============================================================================
+DOMAIN_GRADIENTS = {
+    # 1) Aurora Sky (Counting)
+    "counting": """
+        background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+            stop:0    #D7F4FE,
+            stop:0.55 #BBF1FB,
+            stop:1    #97EFF7
+        );
+        border: 4px solid #97EFF7;
+    """,
+    # 2) Mango Burst (Addition)
+    "addition": """
+        background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+            stop:0    #FFEACC,
+            stop:0.55 #FCCC9C,
+            stop:1    #F7A164
+        );
+        border: 4px solid #F7A164;
+    """,
+    # 3) Mint Nebula (Subtraction)
+    "subtraction": """
+        background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+            stop:0    #D0FBEB,
+            stop:0.55 #B6F7E1,
+            stop:1    #94F0D9
+        );
+        border: 4px solid #94F0D9;
+    """,
+    # 4) Twilight Plum (Patterns)
+    "patterns": """
+        background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+            stop:0    #E6DAFB,
+            stop:0.55 #D7C2F4,
+            stop:1    #C7A5E9
+        );
+        border: 4px solid #C7A5E9;
+    """
+}
+
+# =============================================================================
+# PHYSICS CONFIGURATION
+# =============================================================================
+ANIM_CONFIG = {
+    'bob_speed': 50,            # Timer interval (ms)
+    'bob_amplitude': 12,        # Pixels to move up/down
+    'bob_step': 0.4,            # Pixels per tick
+    'warp_duration': 350,       # ms for click transition
+    'drop_stagger': 150,        # ms delay between cards appearing
+}

@@ -12,8 +12,9 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QGraphicsDropShadowEffect, QFrame, QGridLayout
 )
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QFont, QColor
+from PyQt6.QtCore import Qt, pyqtSignal, QSize
+from PyQt6.QtGui import QFont, QColor, QIcon
+from ui.practice_dialog import PracticeDialog
 
 from config import (
     MIN_TOUCH_TARGET, BUTTON_GAP, MAP_LEVELS_COUNT,
@@ -227,6 +228,14 @@ class PremiumMapView(QWidget):
         
         header.addWidget(egg_frame)
         
+        # Training Camp Button
+        self.practice_btn = QPushButton("🏕️ Training Camp")
+        self.practice_btn.setFixedHeight(50)
+        self.practice_btn.setStyleSheet(STYLES["secondary_button"])
+        self.practice_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.practice_btn.clicked.connect(self._on_practice_clicked)
+        header.addWidget(self.practice_btn)
+        
         return header
     
     def _build_level_grid(self) -> QWidget:
@@ -249,6 +258,15 @@ class PremiumMapView(QWidget):
         
         return container
     
+    def _on_practice_clicked(self):
+        """Open the practice configuration dialog."""
+        print(f"[PremiumMapView] ACTION: Opening PracticeDialog")
+        dialog = PracticeDialog(self)
+        if dialog.exec():
+            print(f"[PremiumMapView] ACTION: Starting practice mode: {dialog.selected_mode}")
+            # We emit the mode string instead of a level int
+            self.level_selected.emit(dialog.selected_mode)
+            
     async def refresh(self, egg_count: int):
         """Update the map with current progress."""
         self.egg_label.setText(f"{egg_count} eggs")

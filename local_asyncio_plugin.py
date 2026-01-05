@@ -44,27 +44,47 @@ def event_loop() -> asyncio.AbstractEventLoop:
 
 
 @pytest.hookimpl(tryfirst=True)
-def pytest_fixture_setup(fixturedef: pytest.FixtureDef[Any], request: pytest.FixtureRequest):
+def pytest_fixture_setup(fixturedef: pytest.FixtureDef[Any], request: pytest.FixtureRequest) -> Any | None:
+    """
+    Handle async fixtures.
+    pytest 9+ caches fixture values inside the default implementation, so we must
+    populate fixturedef.cached_result to prevent double-execution.
+    """
     func = fixturedef.func
-    if inspect.iscoroutinefunction(func):
-        loop = request.getfixturevalue("event_loop")
-        kwargs: Dict[str, Any] = {arg: request.getfixturevalue(arg) for arg in fixturedef.argnames}
-        return loop.run_until_complete(func(**kwargs))
+    if not (inspect.iscoroutinefunction(func) or inspect.isasyncgenfunction(func)):
+        return None
 
-    if inspect.isasyncgenfunction(func):
-        loop = request.getfixturevalue("event_loop")
-        kwargs = {arg: request.getfixturevalue(arg) for arg in fixturedef.argnames}
+    # Use the shared event_loop fixture
+    loop = request.getfixturevalue("event_loop")
+    kwargs: Dict[str, Any] = {arg: request.getfixturevalue(arg) for arg in fixturedef.argnames}
+    cache_key = fixturedef.cache_key(request)
+
+    try:
+        if inspect.iscoroutinefunction(func):
+            result = loop.run_until_complete(func(**kwargs))
+            fixturedef.cached_result = (result, cache_key, None)
+            return result
+
+        # Async generator fixture (yield-style)
         agen = func(**kwargs)
         result = loop.run_until_complete(agen.__anext__())
 
         def _finalizer() -> None:
             try:
-                loop.run_until_complete(agen.__anext__())
+                # Consume remaining items and ensure cleanup
+                while True:
+                    loop.run_until_complete(agen.__anext__())
             except StopAsyncIteration:
+                pass
+            except Exception:
                 pass
 
         request.addfinalizer(_finalizer)
+        fixturedef.cached_result = (result, cache_key, None)
         return result
+    except Exception as e:
+        fixturedef.cached_result = (None, cache_key, (e, e.__traceback__))
+        raise
 
 
 @pytest.hookimpl(tryfirst=True)
@@ -78,7 +98,12 @@ def pytest_pyfunc_call(pyfuncitem: pytest.Function) -> bool | None:
             asyncio.set_event_loop(loop)
             close_loop = True
         try:
-            loop.run_until_complete(testfunction(**pyfuncitem.funcargs))
+            # Only pass fixtures actually requested by the test function.
+            argnames = getattr(pyfuncitem, "_fixtureinfo").argnames
+            testargs = {name: pyfuncitem.funcargs[name] for name in argnames}
+            loop.run_until_complete(testfunction(**testargs))
+        except Exception:
+            raise
         finally:
             if close_loop:
                 loop.run_until_complete(loop.shutdown_asyncgens())
