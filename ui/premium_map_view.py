@@ -231,7 +231,25 @@ class PremiumMapView(QWidget):
         # Training Camp Button
         self.practice_btn = QPushButton("🏕️ Training Camp")
         self.practice_btn.setFixedHeight(50)
-        self.practice_btn.setStyleSheet(STYLES["secondary_button"])
+        self.practice_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #FFB347;
+                color: white;
+                border: none;
+                border-bottom: 4px solid #E59400;
+                border-radius: 12px;
+                font-size: 16px;
+                font-weight: bold;
+                padding: 8px 20px;
+            }
+            QPushButton:hover {
+                background-color: #FFC347;
+            }
+            QPushButton:pressed {
+                background-color: #E59400;
+                border-bottom: 2px solid #E59400;
+            }
+        """)
         self.practice_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.practice_btn.clicked.connect(self._on_practice_clicked)
         header.addWidget(self.practice_btn)

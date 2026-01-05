@@ -259,8 +259,8 @@ class GameManager(QMainWindow):
         self.current_eggs = await self.db.get_eggs()
         await self.map_view.refresh(self.current_eggs)
         
-        # Refresh landing page with progress data (StudioAI fix)
-        await self.landing_view.refresh(self.current_eggs)
+        # Refresh landing page with progress data (synchronous method)
+        self.landing_view.refresh(self.current_eggs)
         
         self.director.set_state(AppState.TUTOR_SPEAKING)
         

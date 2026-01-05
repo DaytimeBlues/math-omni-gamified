@@ -44,3 +44,43 @@
 2026-01-04 18:42:23 | INFO | __main__ | Math Omni starting up...
 2026-01-04 21:05:28 | INFO | __main__ | Logging initialized: C:\Users\Jihye\.gemini\antigravity\playground\sidereal-voyager\logs\app.log
 2026-01-04 21:05:28 | INFO | __main__ | Math Omni starting up...
+2026-01-05 20:01:01 | INFO | __main__ | Logging initialized: C:\Users\Jihye\.gemini\antigravity\playground\sidereal-voyager\logs\app.log
+2026-01-05 20:01:01 | INFO | __main__ | Math Omni starting up... (log_file=logs\app.log)
+2026-01-05 20:01:01 | INFO | core.voice_bank | VoiceBank indexed 190/190 phrases (durations lazy)
+2026-01-05 20:01:02 | ERROR | __main__ | Unhandled fatal error
+Traceback (most recent call last):
+  File "C:\Users\Jihye\.gemini\antigravity\playground\sidereal-voyager\main.py", line 244, in <module>
+    main()
+  File "C:\Users\Jihye\.gemini\antigravity\playground\sidereal-voyager\main.py", line 168, in main
+    window = GameManager(container)
+             ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Jihye\.gemini\antigravity\playground\sidereal-voyager\ui\game_manager.py", line 97, in __init__
+    self.map_view = MapView(self.db)
+                    ^^^^^^^^^^^^^^^^
+  File "C:\Users\Jihye\.gemini\antigravity\playground\sidereal-voyager\ui\premium_map_view.py", line 150, in __init__
+    self._build_ui()
+  File "C:\Users\Jihye\.gemini\antigravity\playground\sidereal-voyager\ui\premium_map_view.py", line 161, in _build_ui
+    header = self._build_header()
+             ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Jihye\.gemini\antigravity\playground\sidereal-voyager\ui\premium_map_view.py", line 234, in _build_header
+    self.practice_btn.setStyleSheet(STYLES["secondary_button"])
+                                    ^^^^^^
+NameError: name 'STYLES' is not defined
+2026-01-05 20:02:28 | INFO | __main__ | Logging initialized: C:\Users\Jihye\.gemini\antigravity\playground\sidereal-voyager\logs\app.log
+2026-01-05 20:02:28 | INFO | __main__ | Math Omni starting up... (log_file=logs\app.log)
+2026-01-05 20:02:28 | INFO | core.voice_bank | VoiceBank indexed 190/190 phrases (durations lazy)
+2026-01-05 20:02:28 | ERROR | __main__ | Startup initialization failed
+Traceback (most recent call last):
+  File "C:\Users\Jihye\.gemini\antigravity\playground\sidereal-voyager\main.py", line 203, in init_async
+    await window.start_application()
+  File "C:\Users\Jihye\.gemini\antigravity\playground\sidereal-voyager\ui\game_manager.py", line 177, in start_application
+    await self._welcome()
+  File "C:\Users\Jihye\.gemini\antigravity\playground\sidereal-voyager\ui\game_manager.py", line 263, in _welcome
+    await self.landing_view.refresh(self.current_eggs)
+TypeError: object NoneType can't be used in 'await' expression
+2026-01-05 20:02:34 | WARNING | __main__ | Event loop closed before cleanup could complete
+2026-01-05 20:05:00 | INFO | __main__ | Logging initialized: C:\Users\Jihye\.gemini\antigravity\playground\sidereal-voyager\logs\app.log
+2026-01-05 20:05:00 | INFO | __main__ | Math Omni starting up... (log_file=logs\app.log)
+2026-01-05 20:05:01 | INFO | core.voice_bank | VoiceBank indexed 190/190 phrases (durations lazy)
+2026-01-05 20:06:00 | INFO | ui.game_manager | Starting level 3 (mode=counting, difficulty=2)
+2026-01-05 20:06:11 | INFO | ui.game_manager | Starting level 9 (mode=counting, difficulty=8)
