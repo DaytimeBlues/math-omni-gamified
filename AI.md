@@ -23,6 +23,7 @@
 | **L3** | Use `profile.progress` dict, not non-existent `current_level` | Progress report generation |
 | **L4** | Don't record errors to profile during practice mode | Prevents data pollution |
 | **L5** | Don't overload signals with different types | Create separate signals for different purposes |
+| **L6** | `_generate_distractors` returns `[target, d1, d2]` shuffled - don't add target again | Options generation |
 
 ---
 
