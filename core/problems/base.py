@@ -38,8 +38,10 @@ class ProblemStrategy(ABC):
 
     def _generate_distractors(self, target: int, count: int, min_val: int = 1, max_val: int = 20) -> list[int]:
         """
-        Generate options using the distractor generator and student profile.
-        Prioritizes numbers the student frequenty mistakes if profile is available.
+        Generate options including the correct answer and distractors.
+        Returns a shuffled list of [target, distractor1, distractor2, ...].
+        
+        FIX: Previously only returned distractors. Now includes target answer.
         """
         import random
         # Lazy import to avoid circular dependency
@@ -67,14 +69,16 @@ class ProblemStrategy(ABC):
                         distractors[0] = err # Replace first distractor
                     break
         
-        # Ensure correct count (if generator didn't provide enough or we need specific bounds)
-        # The generator usually provides 2 distractors (for a set of 3 options).
-        # We'll just ensure we meet the requested 'count' (usually 2).
-        
+        # Ensure correct count of distractors
         while len(distractors) < count:
              d = random.randint(min_val, max_val)
              if d != target and d not in distractors:
                  distractors.append(d)
                  
-        # Return exactly 'count' items
-        return distractors[:count]
+        # Trim to exactly 'count' distractors
+        distractors = distractors[:count]
+        
+        # FIX: Include target in options and shuffle
+        options = [target] + distractors
+        random.shuffle(options)
+        return options
