@@ -21,10 +21,8 @@ class CountingStrategy(ProblemStrategy):
             f"items_{item['name']}",
         ]
         
-        # Get 2 distractors, add target, shuffle
-        distractors = self._generate_distractors(target, count=2, min_val=1, max_val=max_n)
-        options = [target] + distractors
-        random.shuffle(options)
+        # FIX: _generate_distractors now returns [target, d1, d2] shuffled
+        options = self._generate_distractors(target, count=2, min_val=1, max_val=max_n)
 
         return ProblemData(
             correct_answer=target,

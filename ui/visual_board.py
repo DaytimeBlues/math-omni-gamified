@@ -84,6 +84,8 @@ class EmojiItem(QLabel):
         """
         Render the emoji to a customized QPixmap.
         If ghost=True, applies 30% opacity and draws a red cross.
+        
+        FIX: Added soft cream circle background for better visual blending.
         """
         pixmap = QPixmap(size, size)
         pixmap.fill(Qt.GlobalColor.transparent)
@@ -92,13 +94,21 @@ class EmojiItem(QLabel):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
         
+        # 0. Draw soft cream background circle (matches UI background)
+        bg_color = QColor("#FEF9E7")  # Cream from design tokens
+        bg_color.setAlpha(200)  # Slightly transparent for softness
+        painter.setBrush(bg_color)
+        painter.setPen(Qt.PenStyle.NoPen)
+        margin = int(size * 0.05)
+        painter.drawEllipse(margin, margin, size - 2*margin, size - 2*margin)
+        
         # 1. Draw Emoji
         # If ghost, we draw the text at 30% opacity
         opacity = 0.3 if ghost else 1.0
         painter.setOpacity(opacity)
         
         # Use a large font size relative to the box
-        font_size = int(size * 0.7)
+        font_size = int(size * 0.65)  # Slightly smaller to fit in circle
         font = QFont("Segoe UI Emoji", font_size)
         font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
         painter.setFont(font)
