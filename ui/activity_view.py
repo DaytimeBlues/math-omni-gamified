@@ -242,6 +242,8 @@ class ActivityView(QWidget):
     
     def reset_interaction(self):
         """Unlock UI for retry after debounce."""
+        # Code Review Fix: Stop existing timer before starting new one to prevent race conditions
+        self._debounce_timer.stop()
         self._debounce_timer.start(DEBOUNCE_DELAY_MS)
     
     def _unlock_interaction(self):

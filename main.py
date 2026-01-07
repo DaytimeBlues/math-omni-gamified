@@ -220,6 +220,9 @@ def main():
         try:
             await db_service.close()
             audio_service.cleanup()
+            # Code Review Fix: Add VoiceBank cleanup
+            voice_bank = container.resolve(VoiceBank)
+            voice_bank.cleanup()
             logger.info("Cleanup completed successfully")
         except Exception:
             logger.exception("Cleanup failed")

@@ -37,18 +37,29 @@ class DatabaseService:
         Ensure we have a persistent connection with proper pragmas.
 
         ChatGPT 5.2 Fix: Added busy_timeout to handle locked database.
+        Code Review Fix: Added error handling for connection failures.
         """
         if self._connection is not None:
             return self._connection
 
-        conn = await aiosqlite.connect(self.db_path, timeout=5.0)
-        # ChatGPT 5.2 Fix: Wait up to 5s for locks instead of failing immediately
-        await conn.execute("PRAGMA busy_timeout=5000;")
-        await conn.execute("PRAGMA journal_mode=WAL;")
-        await conn.execute("PRAGMA synchronous=NORMAL;")
-        await conn.execute("PRAGMA foreign_keys=ON;")
-        self._connection = conn
-        return conn
+        try:
+            conn = await aiosqlite.connect(self.db_path, timeout=5.0)
+            # ChatGPT 5.2 Fix: Wait up to 5s for locks instead of failing immediately
+            await conn.execute("PRAGMA busy_timeout=5000;")
+            await conn.execute("PRAGMA journal_mode=WAL;")
+            await conn.execute("PRAGMA synchronous=NORMAL;")
+            await conn.execute("PRAGMA foreign_keys=ON;")
+            self._connection = conn
+            return conn
+        except sqlite3.OperationalError as e:
+            logger.error("Database connection failed: %s", e)
+            raise
+        except PermissionError as e:
+            logger.error("Database permission denied: %s", e)
+            raise
+        except Exception as e:
+            logger.error("Unexpected database error: %s", e)
+            raise
 
     async def _retry_locked(self, fn: Callable, *, retries: int = 3, base_delay: float = 0.2, timeout: float = 10.0) -> T:
         """

@@ -64,6 +64,10 @@ class ProblemFactory:
         return list(self._strategies.keys())
 
     def generate(self, difficulty: int, mode: str | None = None) -> ProblemData:
+        # Input validation: ensure difficulty is non-negative
+        if difficulty < 0:
+            difficulty = 0
+        
         strategy_key = mode or self._current_mode
         if strategy_key not in self._strategies:
             raise ValueError(f"Unknown mode: {strategy_key}")

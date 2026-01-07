@@ -225,6 +225,15 @@ class VoiceBank:
         self._player.stop()
         if self._play_done and not self._play_done.done():
             self._play_done.cancel()
+    
+    def cleanup(self) -> None:
+        """
+        Clean up Qt resources.
+        Code Review Fix: Added cleanup method for proper resource management.
+        """
+        self.stop()
+        self._player.setSource(QUrl())
+        # Qt will handle deletion via parent chain
 
 
 # Convenience mappings for game logic
